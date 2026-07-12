@@ -17,6 +17,7 @@ import {
   FileText,
   FolderOpen,
   Code2,
+  BookOpen,
 } from 'lucide-react'
 import { useState } from 'react'
 
@@ -37,6 +38,7 @@ const navItems = [
   { path: '/experience', label: 'Experience', icon: Building2 },
   { path: '/skills', label: 'Skills', icon: Wrench },
   { path: '/coding', label: 'Coding', icon: Code2 },
+  { path: '/bible', label: 'Bible', icon: BookOpen },
   { path: '/resume', label: 'Resume Editor', icon: FileText },
   { path: '/documents', label: 'Documents', icon: FolderOpen },
   { path: '/profile', label: 'Profile', icon: UserCircle },

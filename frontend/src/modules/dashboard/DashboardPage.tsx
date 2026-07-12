@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import api from '@/lib/api'
 import { Button } from '@/components/ui/button'
-import { Loader2, Check, Flame, Briefcase, Code, Target, ChevronRight, Sparkles, AlertTriangle, Lightbulb, Code2 } from 'lucide-react'
+import { Loader2, Check, Flame, Briefcase, Code, Target, ChevronRight, Sparkles, AlertTriangle, Lightbulb, Code2, BookOpen } from 'lucide-react'
 
 interface TodayHabit {
   id: string
@@ -66,12 +66,19 @@ interface CodingStats {
   totalXpEarned: number
 }
 
+interface DailyVerseData {
+  id: string
+  reference: string
+  text: string
+}
+
 export default function DashboardPage() {
   const navigate = useNavigate()
   const [data, setData] = useState<DashboardData | null>(null)
   const [mission, setMission] = useState<DailyMission | null>(null)
   const [aiMessages, setAiMessages] = useState<AiMessage[]>([])
   const [codingStats, setCodingStats] = useState<CodingStats | null>(null)
+  const [dailyVerse, setDailyVerse] = useState<DailyVerseData | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [completingId, setCompletingId] = useState<string | null>(null)
   const [xpFlash, setXpFlash] = useState<number | null>(null)
@@ -109,6 +116,13 @@ export default function DashboardPage() {
       setCodingStats(cstats)
     } catch (err) {
       // Coding module may not have data yet
+    }
+
+    try {
+      const { data: verse } = await api.get('/bible/daily')
+      setDailyVerse(verse)
+    } catch (err) {
+      // Bible may not be seeded yet
     }
 
     setIsLoading(false)
@@ -262,6 +276,23 @@ export default function DashboardPage() {
           </div>
         )}
       </div>
+
+      {/* Daily Verse */}
+      {dailyVerse && (
+        <div className="mb-8 bg-card border rounded-lg p-6 shadow-sm border-primary/10">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+              <BookOpen className="h-4 w-4 text-primary" />
+              Daily Verse
+            </h2>
+            <Button size="sm" variant="ghost" onClick={() => navigate('/bible')}>
+              Open Bible
+            </Button>
+          </div>
+          <p className="text-lg italic leading-relaxed">"{dailyVerse.text}"</p>
+          <p className="text-sm text-muted-foreground mt-2">— {dailyVerse.reference}</p>
+        </div>
+      )}
 
       {/* AI Messages */}
       {aiMessages.length > 0 && (

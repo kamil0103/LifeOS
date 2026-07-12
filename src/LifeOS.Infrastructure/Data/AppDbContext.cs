@@ -31,6 +31,11 @@ public class AppDbContext : DbContext
     public DbSet<AiCoachMessage> AiCoachMessages => Set<AiCoachMessage>();
     public DbSet<CodingProblem> CodingProblems => Set<CodingProblem>();
     public DbSet<ProblemAttempt> ProblemAttempts => Set<ProblemAttempt>();
+    public DbSet<BibleBook> BibleBooks => Set<BibleBook>();
+    public DbSet<BibleVerse> BibleVerses => Set<BibleVerse>();
+    public DbSet<Bookmark> Bookmarks => Set<Bookmark>();
+    public DbSet<ReadingPlan> ReadingPlans => Set<ReadingPlan>();
+    public DbSet<ReadingPlanDay> ReadingPlanDays => Set<ReadingPlanDay>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -88,6 +93,33 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<CodingProblem>(e =>
         {
             e.HasMany(p => p.Attempts).WithOne(a => a.Problem).HasForeignKey(a => a.ProblemId);
+        });
+
+        modelBuilder.Entity<BibleBook>(e =>
+        {
+            e.HasIndex(b => b.BookOrder).IsUnique();
+            e.HasMany(b => b.Verses).WithOne(v => v.Book).HasForeignKey(v => v.BookId);
+        });
+
+        modelBuilder.Entity<BibleVerse>(e =>
+        {
+            e.HasIndex(v => new { v.BookId, v.Chapter, v.VerseNumber }).IsUnique();
+        });
+
+        modelBuilder.Entity<Bookmark>(e =>
+        {
+            e.HasIndex(b => new { b.UserId, b.VerseId }).IsUnique();
+            e.HasOne(b => b.Verse).WithMany().HasForeignKey(b => b.VerseId);
+        });
+
+        modelBuilder.Entity<ReadingPlan>(e =>
+        {
+            e.HasMany(p => p.Days).WithOne(d => d.Plan).HasForeignKey(d => d.PlanId);
+        });
+
+        modelBuilder.Entity<ReadingPlanDay>(e =>
+        {
+            e.HasOne(d => d.Book).WithMany().HasForeignKey(d => d.BookId);
         });
     }
 }

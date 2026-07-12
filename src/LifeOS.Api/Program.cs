@@ -3,6 +3,7 @@ using LifeOS.Api.Middleware;
 using LifeOS.Application.Interfaces;
 using LifeOS.Infrastructure.AI;
 using LifeOS.Infrastructure.Data;
+using LifeOS.Infrastructure.Data.SeedData;
 using LifeOS.Infrastructure.Identity;
 using LifeOS.Infrastructure.PDF;
 using LifeOS.Infrastructure.Services;
@@ -147,6 +148,10 @@ using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     db.Database.Migrate();
+
+    // Seed Bible data (WEB - public domain)
+    var bibleSeeder = new BibleSeeder(db);
+    await bibleSeeder.SeedAsync();
 }
 
 app.Run();

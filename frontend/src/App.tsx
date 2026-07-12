@@ -16,6 +16,7 @@ import AiCoachPage from '@/modules/ai-coach/AiCoachPage'
 import ResumeEditorPage from '@/modules/resume/ResumeEditorPage'
 import DocumentsPage from '@/modules/documents/DocumentsPage'
 import CodingTrackerPage from '@/modules/coding/CodingTrackerPage'
+import BiblePage from '@/modules/bible/BiblePage'
 
 function App() {
   return (
@@ -32,11 +33,12 @@ function App() {
           <Route path="/ai-coach" element={<AiCoachPage />} />
           <Route path="/resume" element={<ResumeEditorPage />} />
           <Route path="/documents" element={<DocumentsPage />} />
+          <Route path="/coding" element={<CodingTrackerPage />} />
+          <Route path="/bible" element={<BiblePage />} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="/education" element={<EducationPage />} />
           <Route path="/experience" element={<ExperiencePage />} />
           <Route path="/skills" element={<SkillsPage />} />
-          <Route path="/coding" element={<CodingTrackerPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
