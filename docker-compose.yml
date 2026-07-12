@@ -1,0 +1,82 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: lifeos-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-lifeos}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me_in_production}
+      POSTGRES_DB: ${POSTGRES_DB:-lifeos}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: src/LifeOS.Api/Dockerfile
+    container_name: lifeos-api
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__DefaultConnection: Host=postgres;Database=${POSTGRES_DB:-lifeos};Username=${POSTGRES_USER:-lifeos};Password=${POSTGRES_PASSWORD:-change_me_in_production}
+      Jwt__Secret: ${JWT_SECRET:-change_this_to_a_64_character_random_string_for_production}
+      Jwt__Issuer: ${JWT_ISSUER:-LifeOS}
+      Jwt__Audience: ${JWT_AUDIENCE:-LifeOS}
+      Jwt__AccessTokenExpirationMinutes: ${JWT_ACCESS_TOKEN_EXPIRATION_MINUTES:-15}
+      Jwt__RefreshTokenExpirationDays: ${JWT_REFRESH_TOKEN_EXPIRATION_DAYS:-7}
+      Ai__Provider: ${AI_PROVIDER:-gemini}
+      Ai__GeminiApiKey: ${GEMINI_API_KEY}
+      Ai__OllamaBaseUrl: ${OLLAMA_BASE_URL:-http://ollama:11434}
+      Ai__OllamaModel: ${OLLAMA_MODEL:-llama3.2}
+      MuseApiKey: ${MUSE_API_KEY}
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data/generated:/app/data/generated
+      - ./data/uploads:/app/data/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: lifeos-frontend
+    restart: unless-stopped
+    depends_on:
+      - api
+
+  nginx:
+    image: nginx:alpine
+    container_name: lifeos-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - api
+      - frontend
+
+  # Optional: Ollama for local AI
+  # ollama:
+  #   image: ollama/ollama:latest
+  #   container_name: lifeos-ollama
+  #   restart: unless-stopped
+  #   volumes:
+  #     - ollama_data:/root/.ollama
+  #   ports:
+  #     - "11434:11434"
+
+volumes:
+  postgres_data:
+  # ollama_data:
