@@ -1,4 +1,5 @@
 using System.Text;
+using LifeOS.Api.Middleware;
 using LifeOS.Application.Interfaces;
 using LifeOS.Infrastructure.Data;
 using LifeOS.Infrastructure.Identity;
@@ -94,6 +95,8 @@ var app = builder.Build();
 // ========================
 // Middleware Pipeline
 // ========================
+app.UseMiddleware<GlobalExceptionMiddleware>();
+
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
