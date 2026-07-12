@@ -1,6 +1,7 @@
 using System.Text;
 using LifeOS.Api.Middleware;
 using LifeOS.Application.Interfaces;
+using LifeOS.Infrastructure.AI;
 using LifeOS.Infrastructure.Data;
 using LifeOS.Infrastructure.Identity;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -59,6 +60,18 @@ builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IJwtService, JwtService>();
 builder.Services.AddScoped<IPasswordHasher, PasswordHasher>();
 builder.Services.AddScoped<ICurrentUserService, LifeOS.Api.Services.CurrentUserService>();
+
+// AI Providers
+builder.Services.AddTransient<GeminiProvider>();
+builder.Services.AddTransient<OllamaProvider>();
+builder.Services.AddTransient<IAiProvider>(sp =>
+{
+    var gemini = sp.GetRequiredService<GeminiProvider>();
+    var ollama = sp.GetRequiredService<OllamaProvider>();
+    var preferred = sp.GetRequiredService<IConfiguration>()["Ai:Provider"] ?? "gemini";
+    var factory = new AiProviderFactory(new IAiProvider[] { gemini, ollama }, preferred);
+    return factory.GetProvider();
+});
 
 // JWT Authentication
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)

@@ -11,11 +11,23 @@ import {
   UserCircle,
   LogOut,
   User,
+  ChevronDown,
+  ClipboardList,
+  StickyNote,
 } from 'lucide-react'
+import { useState } from 'react'
 
 const navItems = [
   { path: '/', label: 'Dashboard', icon: LayoutDashboard },
-  { path: '/jobs', label: 'Jobs', icon: Briefcase },
+  {
+    label: 'Jobs',
+    icon: Briefcase,
+    children: [
+      { path: '/jobs', label: 'Jobs', icon: Briefcase },
+      { path: '/jobs/applications', label: 'Applications', icon: ClipboardList },
+      { path: '/jobs/notes', label: 'Company Notes', icon: StickyNote },
+    ]
+  },
   { path: '/habits', label: 'Habits', icon: Target },
   { path: '/ai-coach', label: 'AI Coach', icon: BrainCircuit },
   { path: '/education', label: 'Education', icon: GraduationCap },
@@ -29,6 +41,11 @@ export default function MainLayout() {
   const logout = useAuthStore((s) => s.logout)
   const navigate = useNavigate()
   const location = useLocation()
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({ jobs: true })
+
+  const toggleGroup = (label: string) => {
+    setExpandedGroups(prev => ({ ...prev, [label]: !prev[label] }))
+  }
 
   return (
     <div className="min-h-screen flex bg-background">
@@ -41,12 +58,54 @@ export default function MainLayout() {
 
         <nav className="flex-1 p-4 space-y-1">
           {navItems.map((item) => {
+            if ('children' in item && item.children) {
+              const isExpanded = expandedGroups[item.label] ?? false
+              const isActive = item.children.some(c => c.path === location.pathname)
+              return (
+                <div key={item.label}>
+                  <button
+                    onClick={() => toggleGroup(item.label)}
+                    className={`w-full flex items-center justify-between px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                      isActive ? 'bg-primary/10 text-primary' : 'hover:bg-accent hover:text-accent-foreground'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <item.icon className="h-4 w-4" />
+                      {item.label}
+                    </div>
+                    <ChevronDown className={`h-4 w-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                  </button>
+                  {isExpanded && (
+                    <div className="ml-6 mt-1 space-y-1">
+                      {item.children.map((child) => {
+                        const ChildIcon = child.icon
+                        return (
+                          <button
+                            key={child.path}
+                            onClick={() => navigate(child.path)}
+                            className={`w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors ${
+                              location.pathname === child.path
+                                ? 'bg-primary/10 text-primary'
+                                : 'hover:bg-accent hover:text-accent-foreground'
+                            }`}
+                          >
+                            <ChildIcon className="h-4 w-4" />
+                            {child.label}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              )
+            }
+
             const Icon = item.icon
             const isActive = location.pathname === item.path
             return (
               <button
                 key={item.path}
-                onClick={() => navigate(item.path)}
+                onClick={() => navigate(item.path!)}
                 className={`w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
                   isActive
                     ? 'bg-primary/10 text-primary'
