@@ -11,6 +11,7 @@ import SkillsPage from '@/modules/skills/SkillsPage'
 import JobsPage from '@/modules/jobs/JobsPage'
 import ApplicationsPage from '@/modules/jobs/ApplicationsPage'
 import CompanyNotesPage from '@/modules/jobs/CompanyNotesPage'
+import HabitsPage from '@/modules/habits/HabitsPage'
 
 function App() {
   return (
@@ -23,7 +24,7 @@ function App() {
           <Route path="/jobs" element={<JobsPage />} />
           <Route path="/jobs/applications" element={<ApplicationsPage />} />
           <Route path="/jobs/notes" element={<CompanyNotesPage />} />
-          <Route path="/habits" element={<div className="p-8">Habits module coming soon...</div>} />
+          <Route path="/habits" element={<HabitsPage />} />
           <Route path="/ai-coach" element={<div className="p-8">AI Coach module coming soon...</div>} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="/education" element={<EducationPage />} />

@@ -8,13 +8,13 @@ namespace LifeOS.Infrastructure.AI;
 
 public class OllamaProvider : IAiProvider
 {
-    private readonly HttpClient _httpClient;
+    private readonly IHttpClientFactory _httpClientFactory;
     private readonly IConfiguration _config;
     private readonly ILogger<OllamaProvider> _logger;
 
-    public OllamaProvider(HttpClient httpClient, IConfiguration config, ILogger<OllamaProvider> logger)
+    public OllamaProvider(IHttpClientFactory httpClientFactory, IConfiguration config, ILogger<OllamaProvider> logger)
     {
-        _httpClient = httpClient;
+        _httpClientFactory = httpClientFactory;
         _config = config;
         _logger = logger;
     }
@@ -26,7 +26,8 @@ public class OllamaProvider : IAiProvider
             try
             {
                 var baseUrl = _config["Ai:OllamaBaseUrl"] ?? "http://localhost:11434";
-                var response = _httpClient.GetAsync($"{baseUrl}/api/tags").Result;
+                var client = _httpClientFactory.CreateClient();
+                var response = client.GetAsync($"{baseUrl}/api/tags").Result;
                 return response.IsSuccessStatusCode;
             }
             catch
@@ -54,7 +55,8 @@ public class OllamaProvider : IAiProvider
         var content = new StringContent(json, Encoding.UTF8, "application/json");
 
         _logger.LogDebug("Calling Ollama API with model {Model}...", model);
-        var response = await _httpClient.PostAsync(url, content, ct);
+        var client = _httpClientFactory.CreateClient();
+        var response = await client.PostAsync(url, content, ct);
         var responseJson = await response.Content.ReadAsStringAsync(ct);
 
         if (!response.IsSuccessStatusCode)

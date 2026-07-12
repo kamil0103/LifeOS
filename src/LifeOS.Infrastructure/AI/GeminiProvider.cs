@@ -8,13 +8,13 @@ namespace LifeOS.Infrastructure.AI;
 
 public class GeminiProvider : IAiProvider
 {
-    private readonly HttpClient _httpClient;
+    private readonly IHttpClientFactory _httpClientFactory;
     private readonly IConfiguration _config;
     private readonly ILogger<GeminiProvider> _logger;
 
-    public GeminiProvider(HttpClient httpClient, IConfiguration config, ILogger<GeminiProvider> logger)
+    public GeminiProvider(IHttpClientFactory httpClientFactory, IConfiguration config, ILogger<GeminiProvider> logger)
     {
-        _httpClient = httpClient;
+        _httpClientFactory = httpClientFactory;
         _config = config;
         _logger = logger;
     }
@@ -39,7 +39,8 @@ public class GeminiProvider : IAiProvider
         var content = new StringContent(json, Encoding.UTF8, "application/json");
 
         _logger.LogDebug("Calling Gemini API...");
-        var response = await _httpClient.PostAsync(url, content, ct);
+        var client = _httpClientFactory.CreateClient();
+        var response = await client.PostAsync(url, content, ct);
         var responseJson = await response.Content.ReadAsStringAsync(ct);
 
         if (!response.IsSuccessStatusCode)
