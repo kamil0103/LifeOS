@@ -17,6 +17,10 @@ import ResumeEditorPage from '@/modules/resume/ResumeEditorPage'
 import DocumentsPage from '@/modules/documents/DocumentsPage'
 import CodingTrackerPage from '@/modules/coding/CodingTrackerPage'
 import BiblePage from '@/modules/bible/BiblePage'
+import PortfolioPage from '@/modules/portfolio/PortfolioPage'
+import CalendarPage from '@/modules/calendar/CalendarPage'
+import AnalyticsPage from '@/modules/analytics/AnalyticsPage'
+import NotificationsPage from '@/modules/notifications/NotificationsPage'
 
 function App() {
   return (
@@ -35,6 +39,10 @@ function App() {
           <Route path="/documents" element={<DocumentsPage />} />
           <Route path="/coding" element={<CodingTrackerPage />} />
           <Route path="/bible" element={<BiblePage />} />
+          <Route path="/portfolio" element={<PortfolioPage />} />
+          <Route path="/calendar" element={<CalendarPage />} />
+          <Route path="/analytics" element={<AnalyticsPage />} />
+          <Route path="/notifications" element={<NotificationsPage />} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="/education" element={<EducationPage />} />
           <Route path="/experience" element={<ExperiencePage />} />

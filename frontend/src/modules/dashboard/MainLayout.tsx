@@ -18,6 +18,10 @@ import {
   FolderOpen,
   Code2,
   BookOpen,
+  Globe,
+  Calendar as CalendarIcon,
+  TrendingUp,
+  Bell,
 } from 'lucide-react'
 import { useState } from 'react'
 
@@ -39,8 +43,12 @@ const navItems = [
   { path: '/skills', label: 'Skills', icon: Wrench },
   { path: '/coding', label: 'Coding', icon: Code2 },
   { path: '/bible', label: 'Bible', icon: BookOpen },
+  { path: '/portfolio', label: 'Portfolio', icon: Globe },
   { path: '/resume', label: 'Resume Editor', icon: FileText },
   { path: '/documents', label: 'Documents', icon: FolderOpen },
+  { path: '/calendar', label: 'Calendar', icon: CalendarIcon },
+  { path: '/analytics', label: 'Analytics', icon: TrendingUp },
+  { path: '/notifications', label: 'Notifications', icon: Bell },
   { path: '/profile', label: 'Profile', icon: UserCircle },
 ]
 

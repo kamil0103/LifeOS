@@ -13,4 +13,10 @@ public class Project : BaseEntity
     public string? EndDate { get; set; }
     public bool IsCurrent { get; set; } = false;
     public bool IsPortfolioProject { get; set; } = false;
+    public string? GitHubRepoUrl { get; set; }
+    public string? DeployedUrl { get; set; }
+    public string? ScreenshotUrl { get; set; }
+    public bool IsFeatured { get; set; } = false;
+    public int? GitHubStars { get; set; }
+    public string? ReadmePreview { get; set; }
 }

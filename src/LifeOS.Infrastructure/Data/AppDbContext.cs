@@ -36,6 +36,8 @@ public class AppDbContext : DbContext
     public DbSet<Bookmark> Bookmarks => Set<Bookmark>();
     public DbSet<ReadingPlan> ReadingPlans => Set<ReadingPlan>();
     public DbSet<ReadingPlanDay> ReadingPlanDays => Set<ReadingPlanDay>();
+    public DbSet<CalendarEvent> CalendarEvents => Set<CalendarEvent>();
+    public DbSet<Notification> Notifications => Set<Notification>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -120,6 +122,18 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<ReadingPlanDay>(e =>
         {
             e.HasOne(d => d.Book).WithMany().HasForeignKey(d => d.BookId);
+        });
+
+        modelBuilder.Entity<CalendarEvent>(e =>
+        {
+            e.HasIndex(ce => new { ce.UserId, ce.StartTime });
+            e.HasOne(ce => ce.Habit).WithMany().HasForeignKey(ce => ce.HabitId);
+            e.HasOne(ce => ce.Job).WithMany().HasForeignKey(ce => ce.JobId);
+        });
+
+        modelBuilder.Entity<Notification>(e =>
+        {
+            e.HasIndex(n => new { n.UserId, n.IsRead });
         });
     }
 }

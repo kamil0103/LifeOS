@@ -3,6 +3,7 @@ using System;
 using LifeOS.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace LifeOS.Infrastructure.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260712221540_AddPortfolioFields")]
+    partial class AddPortfolioFields
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -194,70 +197,6 @@ namespace LifeOS.Infrastructure.Migrations
                         .IsUnique();
 
                     b.ToTable("Bookmarks");
-                });
-
-            modelBuilder.Entity("LifeOS.Domain.Entities.CalendarEvent", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Color")
-                        .HasColumnType("text");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Description")
-                        .HasColumnType("text");
-
-                    b.Property<DateTimeOffset?>("EndTime")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("EventType")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<Guid?>("HabitId")
-                        .HasColumnType("uuid");
-
-                    b.Property<bool>("IsAllDay")
-                        .HasColumnType("boolean");
-
-                    b.Property<bool>("IsRecurring")
-                        .HasColumnType("boolean");
-
-                    b.Property<Guid?>("JobId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Location")
-                        .HasColumnType("text");
-
-                    b.Property<string>("RecurrenceRule")
-                        .HasColumnType("text");
-
-                    b.Property<DateTimeOffset>("StartTime")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Title")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("HabitId");
-
-                    b.HasIndex("JobId");
-
-                    b.HasIndex("UserId", "StartTime");
-
-                    b.ToTable("CalendarEvents");
                 });
 
             modelBuilder.Entity("LifeOS.Domain.Entities.Certificate", b =>
@@ -801,49 +740,6 @@ namespace LifeOS.Infrastructure.Migrations
                     b.ToTable("JobApplications");
                 });
 
-            modelBuilder.Entity("LifeOS.Domain.Entities.Notification", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("ActionUrl")
-                        .HasColumnType("text");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<bool>("IsRead")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("Message")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<DateTimeOffset?>("ReadAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("Title")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("Type")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<DateTimeOffset>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("UserId", "IsRead");
-
-                    b.ToTable("Notifications");
-                });
-
             modelBuilder.Entity("LifeOS.Domain.Entities.ProblemAttempt", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1357,29 +1253,6 @@ namespace LifeOS.Infrastructure.Migrations
                     b.Navigation("Verse");
                 });
 
-            modelBuilder.Entity("LifeOS.Domain.Entities.CalendarEvent", b =>
-                {
-                    b.HasOne("LifeOS.Domain.Entities.Habit", "Habit")
-                        .WithMany()
-                        .HasForeignKey("HabitId");
-
-                    b.HasOne("LifeOS.Domain.Entities.Job", "Job")
-                        .WithMany()
-                        .HasForeignKey("JobId");
-
-                    b.HasOne("LifeOS.Domain.Entities.User", "User")
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Habit");
-
-                    b.Navigation("Job");
-
-                    b.Navigation("User");
-                });
-
             modelBuilder.Entity("LifeOS.Domain.Entities.Certificate", b =>
                 {
                     b.HasOne("LifeOS.Domain.Entities.User", "User")
@@ -1552,17 +1425,6 @@ namespace LifeOS.Infrastructure.Migrations
                     b.Navigation("Job");
 
                     b.Navigation("ResumeVersion");
-
-                    b.Navigation("User");
-                });
-
-            modelBuilder.Entity("LifeOS.Domain.Entities.Notification", b =>
-                {
-                    b.HasOne("LifeOS.Domain.Entities.User", "User")
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
 
                     b.Navigation("User");
                 });
