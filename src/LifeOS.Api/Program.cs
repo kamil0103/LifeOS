@@ -4,9 +4,12 @@ using LifeOS.Application.Interfaces;
 using LifeOS.Infrastructure.AI;
 using LifeOS.Infrastructure.Data;
 using LifeOS.Infrastructure.Identity;
+using LifeOS.Infrastructure.PDF;
+using LifeOS.Infrastructure.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using QuestPDF.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -76,6 +79,16 @@ builder.Services.AddTransient<IAiProvider>(sp =>
     var preferred = sp.GetRequiredService<IConfiguration>()["Ai:Provider"] ?? "gemini";
     var factory = new AiProviderFactory(new IAiProvider[] { gemini, ollama }, preferred);
     return factory.GetProvider();
+});
+
+// PDF & Document Generation
+QuestPDF.Settings.License = LicenseType.Community;
+builder.Services.AddTransient<IResumeGenerator, QuestPdfResumeGenerator>();
+builder.Services.AddTransient<IResumeDataBuilder, ResumeDataBuilder>();
+builder.Services.AddSingleton<IDocumentStorage>(sp =>
+{
+    var basePath = sp.GetRequiredService<IConfiguration>()["Documents:StoragePath"] ?? "./data/generated";
+    return new LocalDocumentStorage(basePath);
 });
 
 // JWT Authentication

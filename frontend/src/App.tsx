@@ -13,6 +13,8 @@ import ApplicationsPage from '@/modules/jobs/ApplicationsPage'
 import CompanyNotesPage from '@/modules/jobs/CompanyNotesPage'
 import HabitsPage from '@/modules/habits/HabitsPage'
 import AiCoachPage from '@/modules/ai-coach/AiCoachPage'
+import ResumeEditorPage from '@/modules/resume/ResumeEditorPage'
+import DocumentsPage from '@/modules/documents/DocumentsPage'
 
 function App() {
   return (
@@ -27,6 +29,8 @@ function App() {
           <Route path="/jobs/notes" element={<CompanyNotesPage />} />
           <Route path="/habits" element={<HabitsPage />} />
           <Route path="/ai-coach" element={<AiCoachPage />} />
+          <Route path="/resume" element={<ResumeEditorPage />} />
+          <Route path="/documents" element={<DocumentsPage />} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="/education" element={<EducationPage />} />
           <Route path="/experience" element={<ExperiencePage />} />

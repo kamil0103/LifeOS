@@ -14,6 +14,8 @@ import {
   ChevronDown,
   ClipboardList,
   StickyNote,
+  FileText,
+  FolderOpen,
 } from 'lucide-react'
 import { useState } from 'react'
 
@@ -33,6 +35,8 @@ const navItems = [
   { path: '/education', label: 'Education', icon: GraduationCap },
   { path: '/experience', label: 'Experience', icon: Building2 },
   { path: '/skills', label: 'Skills', icon: Wrench },
+  { path: '/resume', label: 'Resume Editor', icon: FileText },
+  { path: '/documents', label: 'Documents', icon: FolderOpen },
   { path: '/profile', label: 'Profile', icon: UserCircle },
 ]
 
