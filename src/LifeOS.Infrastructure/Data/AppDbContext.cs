@@ -29,6 +29,8 @@ public class AppDbContext : DbContext
     public DbSet<XpTransaction> XpTransactions => Set<XpTransaction>();
     public DbSet<DailyMission> DailyMissions => Set<DailyMission>();
     public DbSet<AiCoachMessage> AiCoachMessages => Set<AiCoachMessage>();
+    public DbSet<CodingProblem> CodingProblems => Set<CodingProblem>();
+    public DbSet<ProblemAttempt> ProblemAttempts => Set<ProblemAttempt>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -81,6 +83,11 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<DailyMission>(e =>
         {
             e.HasIndex(dm => new { dm.UserId, dm.MissionDate }).IsUnique();
+        });
+
+        modelBuilder.Entity<CodingProblem>(e =>
+        {
+            e.HasMany(p => p.Attempts).WithOne(a => a.Problem).HasForeignKey(a => a.ProblemId);
         });
     }
 }

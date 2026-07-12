@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import api from '@/lib/api'
 import { Button } from '@/components/ui/button'
-import { Loader2, Check, Flame, Briefcase, Code, Target, ChevronRight, Sparkles, AlertTriangle, Lightbulb } from 'lucide-react'
+import { Loader2, Check, Flame, Briefcase, Code, Target, ChevronRight, Sparkles, AlertTriangle, Lightbulb, Code2 } from 'lucide-react'
 
 interface TodayHabit {
   id: string
@@ -60,11 +60,18 @@ interface AiMessage {
   content: string
 }
 
+interface CodingStats {
+  solvedProblems: number
+  currentStreak: number
+  totalXpEarned: number
+}
+
 export default function DashboardPage() {
   const navigate = useNavigate()
   const [data, setData] = useState<DashboardData | null>(null)
   const [mission, setMission] = useState<DailyMission | null>(null)
   const [aiMessages, setAiMessages] = useState<AiMessage[]>([])
+  const [codingStats, setCodingStats] = useState<CodingStats | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [completingId, setCompletingId] = useState<string | null>(null)
   const [xpFlash, setXpFlash] = useState<number | null>(null)
@@ -95,6 +102,13 @@ export default function DashboardPage() {
       setAiMessages(messages)
     } catch (err) {
       console.error(err)
+    }
+
+    try {
+      const { data: cstats } = await api.get('/coding/stats')
+      setCodingStats(cstats)
+    } catch (err) {
+      // Coding module may not have data yet
     }
 
     setIsLoading(false)
@@ -271,7 +285,7 @@ export default function DashboardPage() {
       )}
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
         {/* XP Card */}
         <div className="bg-card border rounded-lg p-6 shadow-sm">
           <div className="flex items-center justify-between mb-2">
@@ -331,6 +345,18 @@ export default function DashboardPage() {
               </div>
             ))}
           </div>
+        </div>
+
+        {/* Coding Card */}
+        <div className="bg-card border rounded-lg p-6 shadow-sm cursor-pointer hover:shadow-md transition-shadow" onClick={() => navigate('/coding')}>
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="text-sm font-medium text-muted-foreground">Coding</h2>
+            <Code2 className="h-4 w-4 text-primary" />
+          </div>
+          <p className="text-2xl font-bold">{codingStats?.solvedProblems ?? 0}</p>
+          <p className="text-xs text-muted-foreground mt-1">
+            {codingStats ? `${codingStats.currentStreak}d streak · ${codingStats.totalXpEarned} XP` : 'Track your problem solving'}
+          </p>
         </div>
       </div>
 
@@ -402,7 +428,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Quick Actions */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <button
           onClick={() => navigate('/jobs')}
           className="bg-card border rounded-lg p-4 shadow-sm text-left hover:shadow-md transition-shadow"
@@ -424,6 +450,19 @@ export default function DashboardPage() {
             <div>
               <h3 className="font-medium">Manage Habits</h3>
               <p className="text-sm text-muted-foreground">Add or edit your habits</p>
+            </div>
+            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+          </div>
+        </button>
+
+        <button
+          onClick={() => navigate('/coding')}
+          className="bg-card border rounded-lg p-4 shadow-sm text-left hover:shadow-md transition-shadow"
+        >
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="font-medium">Solve Problems</h3>
+              <p className="text-sm text-muted-foreground">Track coding practice</p>
             </div>
             <ChevronRight className="h-4 w-4 text-muted-foreground" />
           </div>
