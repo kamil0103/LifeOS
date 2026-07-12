@@ -1,10 +1,14 @@
 import { useAuthStore } from '@/hooks/useAuthStore'
-import { Outlet, useNavigate } from 'react-router-dom'
+import { Outlet, useNavigate, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard,
   Briefcase,
   Target,
   BrainCircuit,
+  GraduationCap,
+  Building2,
+  Wrench,
+  UserCircle,
   LogOut,
   User,
 } from 'lucide-react'
@@ -14,12 +18,17 @@ const navItems = [
   { path: '/jobs', label: 'Jobs', icon: Briefcase },
   { path: '/habits', label: 'Habits', icon: Target },
   { path: '/ai-coach', label: 'AI Coach', icon: BrainCircuit },
+  { path: '/education', label: 'Education', icon: GraduationCap },
+  { path: '/experience', label: 'Experience', icon: Building2 },
+  { path: '/skills', label: 'Skills', icon: Wrench },
+  { path: '/profile', label: 'Profile', icon: UserCircle },
 ]
 
 export default function MainLayout() {
   const user = useAuthStore((s) => s.user)
   const logout = useAuthStore((s) => s.logout)
   const navigate = useNavigate()
+  const location = useLocation()
 
   return (
     <div className="min-h-screen flex bg-background">
@@ -33,11 +42,16 @@ export default function MainLayout() {
         <nav className="flex-1 p-4 space-y-1">
           {navItems.map((item) => {
             const Icon = item.icon
+            const isActive = location.pathname === item.path
             return (
               <button
                 key={item.path}
                 onClick={() => navigate(item.path)}
-                className="w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
+                className={`w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                  isActive
+                    ? 'bg-primary/10 text-primary'
+                    : 'hover:bg-accent hover:text-accent-foreground'
+                }`}
               >
                 <Icon className="h-4 w-4" />
                 {item.label}
