@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import api from '@/lib/api'
 import { Button } from '@/components/ui/button'
-import { Loader2, Check, Flame, Briefcase, Code, Target, ChevronRight } from 'lucide-react'
+import { Loader2, Check, Flame, Briefcase, Code, Target, ChevronRight, Sparkles, AlertTriangle, Lightbulb } from 'lucide-react'
 
 interface TodayHabit {
   id: string
@@ -27,6 +27,21 @@ interface DayProgress {
   completionCount: number
 }
 
+interface MissionPriority {
+  title: string
+  category: string
+  priority: string
+  reason: string
+}
+
+interface DailyMission {
+  id: string
+  date: string
+  priorities: MissionPriority[]
+  aiSummary?: string
+  isCompleted: boolean
+}
+
 interface DashboardData {
   date: string
   habits: TodayHabit[]
@@ -39,23 +54,67 @@ interface DashboardData {
   totalStreakDays: number
 }
 
+interface AiMessage {
+  id: string
+  messageType: string
+  content: string
+}
+
 export default function DashboardPage() {
   const navigate = useNavigate()
   const [data, setData] = useState<DashboardData | null>(null)
+  const [mission, setMission] = useState<DailyMission | null>(null)
+  const [aiMessages, setAiMessages] = useState<AiMessage[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [completingId, setCompletingId] = useState<string | null>(null)
   const [xpFlash, setXpFlash] = useState<number | null>(null)
+  const [isGeneratingMission, setIsGeneratingMission] = useState(false)
 
   useEffect(() => {
-    loadDashboard()
+    loadAllData()
   }, [])
 
-  const loadDashboard = () => {
+  const loadAllData = async () => {
     setIsLoading(true)
-    api.get('/dashboard/today')
-      .then(({ data }) => setData(data))
-      .catch(console.error)
-      .finally(() => setIsLoading(false))
+    try {
+      const { data: dashData } = await api.get('/dashboard/today')
+      setData(dashData)
+    } catch (err) {
+      console.error(err)
+    }
+
+    try {
+      const { data: missionData } = await api.get('/aicoach/mission')
+      setMission(missionData)
+    } catch (err) {
+      // No mission yet
+    }
+
+    try {
+      const { data: messages } = await api.get('/aicoach/messages?limit=2')
+      setAiMessages(messages)
+    } catch (err) {
+      console.error(err)
+    }
+
+    setIsLoading(false)
+  }
+
+  const generateMission = async () => {
+    setIsGeneratingMission(true)
+    try {
+      const { data } = await api.post('/aicoach/generate-mission')
+      setMission(data)
+      // Refresh messages
+      const { data: messages } = await api.get('/aicoach/messages?limit=2')
+      setAiMessages(messages)
+    } catch (err: any) {
+      if (err.response?.data?.detail) {
+        alert(err.response.data.detail)
+      }
+    } finally {
+      setIsGeneratingMission(false)
+    }
   }
 
   const completeHabit = async (id: string) => {
@@ -64,7 +123,7 @@ export default function DashboardPage() {
       const { data: result } = await api.post(`/habits/${id}/complete`)
       setXpFlash(result.xpEarned)
       setTimeout(() => setXpFlash(null), 2000)
-      loadDashboard()
+      loadAllData()
     } catch (err) {
       console.error(err)
     } finally {
@@ -77,6 +136,15 @@ export default function DashboardPage() {
     if (count <= 2) return 'bg-primary/30'
     if (count <= 4) return 'bg-primary/60'
     return 'bg-primary'
+  }
+
+  const getPriorityColor = (priority: string) => {
+    switch (priority.toLowerCase()) {
+      case 'high': return 'bg-destructive/10 text-destructive border-destructive/20'
+      case 'medium': return 'bg-yellow-500/10 text-yellow-600 border-yellow-500/20'
+      case 'low': return 'bg-blue-500/10 text-blue-600 border-blue-500/20'
+      default: return 'bg-secondary text-secondary-foreground'
+    }
   }
 
   if (isLoading) {
@@ -115,6 +183,92 @@ export default function DashboardPage() {
           {new Date(data.date).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
         </p>
       </div>
+
+      {/* AI Mission Section */}
+      <div className="mb-8">
+        {!mission ? (
+          <div className="bg-card border rounded-lg p-6 shadow-sm border-dashed border-primary/30">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-semibold flex items-center gap-2">
+                  <Sparkles className="h-5 w-5 text-primary" />
+                  Generate Your Daily Mission
+                </h2>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Let AI analyze your progress and create personalized priorities
+                </p>
+              </div>
+              <Button onClick={generateMission} disabled={isGeneratingMission}>
+                {isGeneratingMission ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Sparkles className="mr-2 h-4 w-4" />
+                )}
+                Generate
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className={`bg-card border rounded-lg p-6 shadow-sm ${mission.isCompleted ? 'opacity-70' : 'border-primary/20'}`}>
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="text-lg font-semibold">
+                  {mission.isCompleted ? (
+                    <span className="line-through">Today's Mission</span>
+                  ) : (
+                    "Today's Mission"
+                  )}
+                </h2>
+                {mission.aiSummary && (
+                  <p className="text-sm text-muted-foreground italic">"{mission.aiSummary}"</p>
+                )}
+              </div>
+              {!mission.isCompleted ? (
+                <Button size="sm" variant="outline" onClick={() => navigate('/ai-coach')}>
+                  View Details
+                </Button>
+              ) : (
+                <span className="text-sm text-green-500 flex items-center gap-1">
+                  <Check className="h-4 w-4" />
+                  Done
+                </span>
+              )}
+            </div>
+            <div className="space-y-2">
+              {mission.priorities.slice(0, 3).map((priority, idx) => (
+                <div
+                  key={idx}
+                  className={`border rounded-md p-3 text-sm ${getPriorityColor(priority.priority)}`}
+                >
+                  <span className="font-medium">{priority.title}</span>
+                  <span className="ml-2 text-xs opacity-70">({priority.category})</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* AI Messages */}
+      {aiMessages.length > 0 && (
+        <div className="mb-8 space-y-3">
+          {aiMessages.map((msg) => (
+            <div
+              key={msg.id}
+              className={`bg-card border rounded-lg p-4 shadow-sm ${msg.messageType === 'warning' ? 'border-yellow-500/30' : 'border-primary/20'}`}
+            >
+              <div className="flex items-start gap-3">
+                {msg.messageType === 'warning' ? (
+                  <AlertTriangle className="h-5 w-5 text-yellow-500 mt-0.5" />
+                ) : (
+                  <Lightbulb className="h-5 w-5 text-primary mt-0.5" />
+                )}
+                <p className="text-sm">{msg.content}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
@@ -250,7 +404,7 @@ export default function DashboardPage() {
       {/* Quick Actions */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <button
-          onClick={() => navigate('/jobs/discover')}
+          onClick={() => navigate('/jobs')}
           className="bg-card border rounded-lg p-4 shadow-sm text-left hover:shadow-md transition-shadow"
         >
           <div className="flex items-center justify-between">
@@ -276,13 +430,13 @@ export default function DashboardPage() {
         </button>
 
         <button
-          onClick={() => navigate('/skills')}
+          onClick={() => navigate('/ai-coach')}
           className="bg-card border rounded-lg p-4 shadow-sm text-left hover:shadow-md transition-shadow"
         >
           <div className="flex items-center justify-between">
             <div>
-              <h3 className="font-medium">Update Skills</h3>
-              <p className="text-sm text-muted-foreground">Track your progress</p>
+              <h3 className="font-medium">AI Coach</h3>
+              <p className="text-sm text-muted-foreground">Get personalized guidance</p>
             </div>
             <ChevronRight className="h-4 w-4 text-muted-foreground" />
           </div>
