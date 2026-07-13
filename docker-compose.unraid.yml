@@ -18,7 +18,7 @@ services:
       - lifeos
 
   api:
-    image: ghcr.io/kamil0103/lifeos/api:main
+    image: ghcr.io/kamil0103/lifeos/api:latest
     container_name: lifeos-api
     restart: unless-stopped
     environment:
@@ -42,7 +42,7 @@ services:
       - lifeos
 
   frontend:
-    image: ghcr.io/kamil0103/lifeos/frontend:main
+    image: ghcr.io/kamil0103/lifeos/frontend:latest
     container_name: lifeos-frontend
     restart: unless-stopped
     depends_on:

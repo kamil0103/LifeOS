@@ -1,0 +1,63 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>lifeos</Name>
+  <Repository>ghcr.io/kamil0103/lifeos/api:latest</Repository>
+  <Repository2>ghcr.io/kamil0103/lifeos/frontend:latest</Repository2>
+  <Registry>https://github.com/kamil0103/LifeOS/pkgs/container/lifeos%2Fapi</Registry>
+  <Network>bridge</Network>
+  <MyIP/>
+  <MyMAC/>
+  <Shell>sh</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/kamil0103/LifeOS/issues</Support>
+  <Project>https://github.com/kamil0103/LifeOS</Project>
+  <ReadMe>https://github.com/kamil0103/LifeOS#readme</ReadMe>
+  <Overview>LifeOS - Self-hosted Personal Operating System&#13;
+&#13;
+Become a better software engineer, stay disciplined, and grow spiritually.&#13;
+&#13;
+Features:&#13;
+- Dashboard with daily missions and habit tracking&#13;
+- Job discovery and application tracker with AI match scores&#13;
+- Resume &amp;amp; cover letter generation (QuestPDF)&#13;
+- Coding / LeetCode tracker with XP rewards&#13;
+- AI Coach with daily missions and spiritual guidance&#13;
+- Bible module with WEB (public domain)&#13;
+- Portfolio, Calendar, Analytics, Notifications&#13;
+&#13;
+Tech Stack:&#13;
+- ASP.NET Core 9 backend with PostgreSQL&#13;
+- React 19 + Vite frontend&#13;
+- Google Gemini + Ollama AI&#13;
+&#13;
+Requires Docker Compose. Install Docker Compose Manager plugin first.&#13;
+&#13;
+Before first run:&#13;
+1. Create /opt/lifeos/.env with your secrets&#13;
+2. Set JWT_SECRET to a 64+ character random string&#13;
+3. Add GEMINI_API_KEY for AI features</Overview>
+  <Category>Tools:Utilities Status:Stable</Category>
+  <WebUI>http://[IP]:[PORT:80]/</WebUI>
+  <TemplateURL>https://raw.githubusercontent.com/kamil0103/LifeOS/main/unraid/lifeos.xml</TemplateURL>
+  <Icon>https://raw.githubusercontent.com/kamil0103/LifeOS/main/logo.png</Icon>
+  <ExtraParams>--restart unless-stopped</ExtraParams>
+  <PostArgs/>
+  <CPUset/>
+  <DateInstalled>1752336000</DateInstalled>
+  <DonateText/>
+  <DonateLink/>
+  <Requires>Docker Compose Manager plugin. PostgreSQL included in stack. Create /opt/lifeos/.env before first run.</Requires>
+  <Config Name="WebUI Port" Target="80" Default="80" Mode="tcp" Description="nginx web port" Type="Port" Display="always" Required="true" Mask="false">8080</Config>
+  <Config Name="API Port" Target="8080" Default="8080" Mode="tcp" Description="API backend port" Type="Port" Display="always" Required="true" Mask="false">8081</Config>
+  <Config Name="Data Path" Target="/app/data" Default="/mnt/user/appdata/lifeos/data" Mode="rw" Description="Persistent data (generated docs, uploads)" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/lifeos/data</Config>
+  <Config Name="Env File" Target="/app/.env" Default="/mnt/user/appdata/lifeos/.env" Mode="ro" Description="Environment config file" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/lifeos/.env</Config>
+  <Config Name="Postgres Data" Target="/var/lib/postgresql/data" Default="/mnt/user/appdata/lifeos/postgres" Mode="rw" Description="PostgreSQL database files" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/lifeos/postgres</Config>
+  <Config Name="JWT Secret" Target="JWT_SECRET" Default="" Mode="" Description="64+ character random string for JWT signing" Type="Variable" Display="always" Required="true" Mask="true"/>
+  <Config Name="Gemini API Key" Target="GEMINI_API_KEY" Default="" Mode="" Description="Google Gemini API Key for AI features" Type="Variable" Display="always" Required="false" Mask="true"/>
+  <Config Name="AI Provider" Target="AI_PROVIDER" Default="gemini" Mode="" Description="AI provider: gemini or ollama" Type="Variable" Display="always" Required="false" Mask="false">gemini</Config>
+  <Config Name="Postgres User" Target="POSTGRES_USER" Default="lifeos" Mode="" Description="PostgreSQL username" Type="Variable" Display="always" Required="false" Mask="false">lifeos</Config>
+  <Config Name="Postgres Password" Target="POSTGRES_PASSWORD" Default="change_me" Mode="" Description="PostgreSQL password" Type="Variable" Display="always" Required="true" Mask="true">change_me_in_production</Config>
+  <Config Name="Postgres DB" Target="POSTGRES_DB" Default="lifeos" Mode="" Description="PostgreSQL database name" Type="Variable" Display="always" Required="false" Mask="false">lifeos</Config>
+  <Config Name="Ollama URL" Target="OLLAMA_BASE_URL" Default="" Mode="" Description="Ollama base URL (optional local fallback)" Type="Variable" Display="always" Required="false" Mask="false"/>
+  <TailscaleStateDir/>
+</Container>
