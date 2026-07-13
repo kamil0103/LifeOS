@@ -1,15 +1,15 @@
 # Build stage
 FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
 WORKDIR /src
-COPY src/LifeOS.Domain/LifeOS.Domain.csproj src/LifeOS.Domain/
-COPY src/LifeOS.Application/LifeOS.Application.csproj src/LifeOS.Application/
-COPY src/LifeOS.Infrastructure/LifeOS.Infrastructure.csproj src/LifeOS.Infrastructure/
-COPY src/LifeOS.Api/LifeOS.Api.csproj src/LifeOS.Api/
-COPY src/LifeOS.sln src/
-RUN dotnet restore src/LifeOS.Api/LifeOS.Api.csproj
+COPY src/LifeOS.sln .
+COPY src/LifeOS.Domain/LifeOS.Domain.csproj LifeOS.Domain/
+COPY src/LifeOS.Application/LifeOS.Application.csproj LifeOS.Application/
+COPY src/LifeOS.Infrastructure/LifeOS.Infrastructure.csproj LifeOS.Infrastructure/
+COPY src/LifeOS.Api/LifeOS.Api.csproj LifeOS.Api/
+RUN dotnet restore LifeOS.Api/LifeOS.Api.csproj
 
 COPY src/ .
-RUN dotnet publish src/LifeOS.Api/LifeOS.Api.csproj -c Release -o /app/publish --no-restore
+RUN dotnet publish LifeOS.Api/LifeOS.Api.csproj -c Release -o /app/publish --no-restore
 
 # Runtime stage
 FROM mcr.microsoft.com/dotnet/aspnet:9.0 AS runtime
