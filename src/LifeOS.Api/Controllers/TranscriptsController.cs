@@ -7,6 +7,8 @@ using LifeOS.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using UglyToad.PdfPig;
+using UglyToad.PdfPig.DocumentLayoutAnalysis.TextExtractor;
 
 namespace LifeOS.Api.Controllers;
 
@@ -116,9 +118,54 @@ public class TranscriptsController : ControllerBase
         {
             using var ms = new MemoryStream();
             file.CopyTo(ms);
+            ms.Position = 0;
+            
+            // Use PdfPig for proper PDF text extraction
+            string extracted;
+            try
+            {
+                using var document = PdfDocument.Open(ms);
+                var pages = document.GetPages();
+                var textBuilder = new StringBuilder();
+                foreach (var page in pages)
+                {
+                    var pageText = page.Text;
+                    if (!string.IsNullOrWhiteSpace(pageText))
+                    {
+                        textBuilder.AppendLine(pageText);
+                    }
+                }
+                extracted = textBuilder.ToString();
+            }
+            catch (Exception pdfEx)
+            {
+                _logger.LogWarning(pdfEx, "PdfPig failed for {FileName}, falling back to regex extraction", file.FileName);
+                // Fallback to simple regex extraction
+                extracted = FallbackPdfExtraction(ms);
+            }
+
+            _logger.LogInformation("PDF extraction: got {Length} readable characters from {FileName}", extracted.Length, file.FileName);
+            if (!string.IsNullOrEmpty(extracted))
+            {
+                _logger.LogDebug("Extracted text sample: {Sample}", extracted.Substring(0, Math.Min(500, extracted.Length)));
+            }
+            
+            return extracted;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "PDF text extraction failed for {FileName}", file.FileName);
+            return string.Empty;
+        }
+    }
+
+    private string FallbackPdfExtraction(MemoryStream ms)
+    {
+        try
+        {
+            ms.Position = 0;
             var bytes = ms.ToArray();
             var content = Encoding.UTF8.GetString(bytes);
-            
             var textBuilder = new StringBuilder();
             
             // Method 1: Extract text between BT and ET markers (PDF text objects)
@@ -126,7 +173,6 @@ public class TranscriptsController : ControllerBase
             foreach (Match btMatch in btMatches)
             {
                 var textInside = btMatch.Groups[1].Value;
-                // Find all text strings inside parentheses
                 var stringMatches = Regex.Matches(textInside, @"\(([^)]{2,300})\)");
                 foreach (Match sm in stringMatches)
                 {
@@ -140,7 +186,7 @@ public class TranscriptsController : ControllerBase
 
             var extracted = textBuilder.ToString();
             
-            // Method 2: If BT/ET extraction didn't work, try finding all parenthesized strings
+            // Method 2: Try finding all parenthesized strings
             if (extracted.Length < 200)
             {
                 textBuilder.Clear();
@@ -156,30 +202,10 @@ public class TranscriptsController : ControllerBase
                 extracted = textBuilder.ToString();
             }
 
-            // Method 3: Look for text that appears after PDF operators like Tj, TJ, '")
-            if (extracted.Length < 200)
-            {
-                textBuilder.Clear();
-                var tjMatches = Regex.Matches(content, @"\(([^)]{2,200})\)\s*(?:Tj|TJ|\')");
-                foreach (Match match in tjMatches)
-                {
-                    var txt = match.Groups[1].Value;
-                    if (IsReadableText(txt))
-                    {
-                        textBuilder.Append(txt).Append(' ');
-                    }
-                }
-                extracted = textBuilder.ToString();
-            }
-
-            _logger.LogInformation("PDF extraction: got {Length} readable characters from {FileName}", extracted.Length, file.FileName);
-            _logger.LogDebug("Extracted text sample: {Sample}", extracted.Substring(0, Math.Min(500, extracted.Length)));
-            
             return extracted;
         }
-        catch (Exception ex)
+        catch
         {
-            _logger.LogError(ex, "PDF text extraction failed for {FileName}", file.FileName);
             return string.Empty;
         }
     }
@@ -187,11 +213,8 @@ public class TranscriptsController : ControllerBase
     private bool IsReadableText(string text)
     {
         if (string.IsNullOrWhiteSpace(text) || text.Length < 3) return false;
-        
-        // Must contain actual words (letters with spaces)
         if (!Regex.IsMatch(text, @"[a-zA-Z]{2,}")) return false;
         
-        // Filter out PDF commands and metadata
         var lower = text.ToLowerInvariant();
         if (lower.Contains("obj") && lower.Contains("endobj")) return false;
         if (text.StartsWith("/")) return false;
@@ -200,10 +223,9 @@ public class TranscriptsController : ControllerBase
         if (text.Contains("stream") || text.Contains("endstream")) return false;
         if (text.Contains("xref") || text.Contains("trailer")) return false;
         
-        // Should have reasonable ratio of letters to total characters
         var letters = text.Count(char.IsLetter);
         var ratio = (double)letters / text.Length;
-        if (ratio < 0.5 && text.Length > 20) return false; // Too much non-letter content
+        if (ratio < 0.5 && text.Length > 20) return false;
         
         return true;
     }
