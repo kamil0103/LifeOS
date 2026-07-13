@@ -24,7 +24,7 @@ public class GeminiProvider : IAiProvider
     public async Task<string> CompleteAsync(string systemPrompt, string userPrompt, CancellationToken ct = default)
     {
         var apiKey = _config["Ai:GeminiApiKey"]!;
-        var url = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key={apiKey}";
+        var url = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={apiKey}";
 
         var requestBody = new
         {
@@ -63,8 +63,10 @@ public class GeminiProvider : IAiProvider
     public async Task<string> CompleteJsonAsync(string systemPrompt, string userPrompt, CancellationToken ct = default)
     {
         var apiKey = _config["Ai:GeminiApiKey"]!;
-        var url = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key={apiKey}";
+        var model = _config["Ai:GeminiModel"] ?? "gemini-2.5-flash";
+        var url = $"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={apiKey}";
 
+        // Try with JSON mode first
         var requestBody = new
         {
             contents = new[]
@@ -74,7 +76,7 @@ public class GeminiProvider : IAiProvider
             generationConfig = new
             {
                 temperature = 0.1,
-                maxOutputTokens = 4096,
+                maxOutputTokens = 8192,
                 responseMimeType = "application/json"
             }
         };
@@ -82,15 +84,18 @@ public class GeminiProvider : IAiProvider
         var json = JsonSerializer.Serialize(requestBody);
         var content = new StringContent(json, Encoding.UTF8, "application/json");
 
-        _logger.LogInformation("Calling Gemini JSON API...");
+        _logger.LogInformation("Calling Gemini JSON API (model={Model})...", model);
         var client = _httpClientFactory.CreateClient();
         var response = await client.PostAsync(url, content, ct);
         var responseJson = await response.Content.ReadAsStringAsync(ct);
 
         if (!response.IsSuccessStatusCode)
         {
-            _logger.LogError("Gemini JSON API error: {Status} - {Body}", response.StatusCode, responseJson);
-            throw new InvalidOperationException($"Gemini API error: {response.StatusCode}");
+            _logger.LogWarning("Gemini JSON mode failed ({Status}), falling back to text mode. Body: {Body}", response.StatusCode, responseJson);
+            
+            // Fallback: call without JSON mode
+            var enhancedPrompt = userPrompt + "\n\nRespond ONLY with valid JSON. Do not include markdown formatting, backticks, or explanatory text.";
+            return await CompleteAsync(systemPrompt, enhancedPrompt, ct);
         }
 
         using var doc = JsonDocument.Parse(responseJson);
