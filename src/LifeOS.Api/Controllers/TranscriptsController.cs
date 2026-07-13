@@ -260,36 +260,6 @@ public class TranscriptsController : ControllerBase
         return metaResult;
     }
 
-    private static List<ExtractedCourseDto> ParseCoursesFromText(string text)
-    {
-        var courses = new List<ExtractedCourseDto>();
-        var lines = text.Split('\n');
-        
-        string? currentTerm = null;
-        
-        foreach (var rawLine in lines)
-        {
-            var line = rawLine.Trim();
-            if (string.IsNullOrWhiteSpace(line)) continue;
-            
-            // Detect term headers like "Fall Semester 2021" or "Summer Term 2021"
-            var termMatch = Regex.Match(line, @"(Fall|Spring|Summer|Winter)\s*(Semester|Term|Session|Intersession)\s*(\d{4})", RegexOptions.IgnoreCase);
-            if (termMatch.Success)
-            {
-                currentTerm = $"{termMatch.Groups[1].Value} {termMatch.Groups[2].Value} {termMatch.Groups[3].Value}";
-                continue;
-            }
-            
-            var course = TryParseCourseLine(line, currentTerm);
-            if (course != null && !string.IsNullOrWhiteSpace(course.Name))
-            {
-                courses.Add(course);
-            }
-        }
-        
-        return courses;
-    }
-
     private static readonly Dictionary<string, double> GradeValues = new()
     {
         ["A+"] = 4.0, ["A"] = 4.0, ["A-"] = 3.7,
@@ -299,65 +269,78 @@ public class TranscriptsController : ControllerBase
         ["F"] = 0.0,
     };
 
-    private static ExtractedCourseDto? TryParseCourseLine(string line, string? term)
+    private static List<ExtractedCourseDto> ParseCoursesFromText(string text)
     {
-        // Extract code: leading uppercase letters followed by digits
-        var codeMatch = Regex.Match(line, @"^([A-Z]{2,}\d+)");
-        if (!codeMatch.Success) return null;
+        var courses = new List<ExtractedCourseDto>();
         
-        var code = codeMatch.Groups[1].Value;
-        var rest = line[code.Length..];
-        
-        // Find grade positions: letter grade followed by decimal number
-        var gradeMatches = Regex.Matches(rest, @"([A-FWP][+-]?)(?=\d+\.\d+)");
-        if (gradeMatches.Count == 0) return null;
-        
-        // Use the last grade match (most likely the actual grade)
-        var lastGradeMatch = gradeMatches[^1];
-        var grade = lastGradeMatch.Groups[1].Value;
-        var name = rest[..lastGradeMatch.Index].Trim();
-        
-        // Clean up name: remove trailing credit numbers
-        name = Regex.Replace(name, @"\s*[\d.]+\s*[\d.]+\s*$", "").Trim();
-        
-        if (string.IsNullOrWhiteSpace(name) || name.Length < 2) return null;
-        
-        // Filter out non-course lines
-        if (name.Contains("TOTAL", StringComparison.OrdinalIgnoreCase)) return null;
-        if (name.Contains("GPA", StringComparison.OrdinalIgnoreCase)) return null;
-        if (name.Contains("STANDING", StringComparison.OrdinalIgnoreCase)) return null;
-        if (name.Contains("CUMULATIVE", StringComparison.OrdinalIgnoreCase)) return null;
-        
-        // Find last number (points)
-        var lastNumberMatch = Regex.Match(line, @"(\d+\.\d+)$");
-        if (!lastNumberMatch.Success) return null;
-        
-        var pointsStr = lastNumberMatch.Groups[1].Value;
-        if (!double.TryParse(pointsStr, out var points)) return null;
-        
-        // Calculate credits from points and grade
-        string credits;
-        if (GradeValues.TryGetValue(grade, out var gradeVal) && gradeVal > 0)
+        // Detect term headers in the full text to assign terms to courses
+        var termMatches = Regex.Matches(text, @"(Fall|Spring|Summer|Winter)\s*(Semester|Term|Session|Intersession)\s*(\d{4})", RegexOptions.IgnoreCase);
+        var termBoundaries = new List<(int Index, string Term)>();
+        foreach (Match tm in termMatches)
         {
-            var cred = points / gradeVal;
-            // Round to nearest 0.5
-            cred = Math.Round(cred * 2) / 2;
-            credits = cred == Math.Truncate(cred) ? $"{cred:F2}" : $"{cred:F2}";
-        }
-        else
-        {
-            // For P/W, credits = points
-            credits = points.ToString("F2");
+            termBoundaries.Add((tm.Index, $"{tm.Groups[1].Value} {tm.Groups[2].Value} {tm.Groups[3].Value}"));
         }
         
-        return new ExtractedCourseDto
+        // Course pattern for concatenated transcript text
+        // Code + Name(starts with uppercase) + Grade + Numbers, stopping before next code/term/end
+        var pattern = @"(?<![A-Z])([A-Z]{2,}\d+)([A-Z].+?)([A-FWP][+-]?)\s*([\d.]+(?:[\d.]+)*?)\s*(?=(?:[A-Z]{2,}\d+)|SEMESTER|CUMULATIVE|TERM|Dean's|In Good|\-{5,}|$)";
+        var matches = Regex.Matches(text, pattern);
+        
+        foreach (Match m in matches)
         {
-            Code = code,
-            Name = name,
-            Grade = grade,
-            Credits = credits,
-            Term = term
-        };
+            var code = m.Groups[1].Value;
+            var name = m.Groups[2].Value.Trim();
+            var grade = m.Groups[3].Value;
+            var numbers = m.Groups[4].Value.Trim();
+            
+            // Filter out non-course lines
+            if (name.Contains("TOTAL", StringComparison.OrdinalIgnoreCase)) continue;
+            if (name.Contains("GPA", StringComparison.OrdinalIgnoreCase)) continue;
+            if (name.Contains("STANDING", StringComparison.OrdinalIgnoreCase)) continue;
+            if (name.Contains("CUMULATIVE", StringComparison.OrdinalIgnoreCase)) continue;
+            if (name.Length < 2) continue;
+            
+            // Determine term by finding the nearest term boundary before this match
+            string? term = null;
+            for (int i = termBoundaries.Count - 1; i >= 0; i--)
+            {
+                if (termBoundaries[i].Index < m.Index)
+                {
+                    term = termBoundaries[i].Term;
+                    break;
+                }
+            }
+            
+            // Calculate credits from last number (points) and grade
+            var lastNumberMatch = Regex.Match(numbers, @"(\d+\.\d+)$");
+            if (!lastNumberMatch.Success) continue;
+            
+            var pointsStr = lastNumberMatch.Groups[1].Value;
+            if (!double.TryParse(pointsStr, out var points)) continue;
+            
+            string credits;
+            if (GradeValues.TryGetValue(grade, out var gradeVal) && gradeVal > 0)
+            {
+                var cred = points / gradeVal;
+                cred = Math.Round(cred * 2) / 2;
+                credits = $"{cred:F2}";
+            }
+            else
+            {
+                credits = points.ToString("F2");
+            }
+            
+            courses.Add(new ExtractedCourseDto
+            {
+                Code = code,
+                Name = name,
+                Grade = grade,
+                Credits = credits,
+                Term = term
+            });
+        }
+        
+        return courses;
     }
 
     private static string CleanupJsonResponse(string response)
