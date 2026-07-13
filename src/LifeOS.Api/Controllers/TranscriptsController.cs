@@ -290,62 +290,74 @@ public class TranscriptsController : ControllerBase
         return courses;
     }
 
+    private static readonly Dictionary<string, double> GradeValues = new()
+    {
+        ["A+"] = 4.0, ["A"] = 4.0, ["A-"] = 3.7,
+        ["B+"] = 3.3, ["B"] = 3.0, ["B-"] = 2.7,
+        ["C+"] = 2.3, ["C"] = 2.0, ["C-"] = 1.7,
+        ["D+"] = 1.3, ["D"] = 1.0, ["D-"] = 0.7,
+        ["F"] = 0.0,
+    };
+
     private static ExtractedCourseDto? TryParseCourseLine(string line, string? term)
     {
-        // Normalize multiple spaces to single space
-        var normalized = Regex.Replace(line, @"\s+", " ");
+        // Extract code: leading uppercase letters followed by digits
+        var codeMatch = Regex.Match(line, @"^([A-Z]{2,}\d+)");
+        if (!codeMatch.Success) return null;
         
-        // Filter out obvious non-course lines
-        if (normalized.Contains("TOTAL", StringComparison.OrdinalIgnoreCase)) return null;
-        if (normalized.Contains("GPA", StringComparison.OrdinalIgnoreCase)) return null;
-        if (normalized.Contains("STANDING", StringComparison.OrdinalIgnoreCase)) return null;
-        if (normalized.Contains("Dean's List", StringComparison.OrdinalIgnoreCase)) return null;
-        if (normalized.Contains("CUMULATIVE", StringComparison.OrdinalIgnoreCase)) return null;
-        if (normalized.Contains("SEMESTER", StringComparison.OrdinalIgnoreCase)) return null;
+        var code = codeMatch.Groups[1].Value;
+        var rest = line[code.Length..];
         
-        // Pattern 1: Code Name Grade Credits ... (El Camino style)
-        // e.g., "MATH170 Trigonometry A 3.00 3.00 12.00"
-        var match1 = Regex.Match(normalized, 
-            @"^([A-Z]{2,}\s*\d+[A-Z]?)\s+(.+?)\s+([A-FWP][+-]?)\s+([\d.]+)\s*(?:[\d.]+)?\s*(?:[\d.]+)?");
+        // Find grade positions: letter grade followed by decimal number
+        var gradeMatches = Regex.Matches(rest, @"([A-FWP][+-]?)(?=\d+\.\d+)");
+        if (gradeMatches.Count == 0) return null;
         
-        if (match1.Success)
+        // Use the last grade match (most likely the actual grade)
+        var lastGradeMatch = gradeMatches[^1];
+        var grade = lastGradeMatch.Groups[1].Value;
+        var name = rest[..lastGradeMatch.Index].Trim();
+        
+        // Clean up name: remove trailing credit numbers
+        name = Regex.Replace(name, @"\s*[\d.]+\s*[\d.]+\s*$", "").Trim();
+        
+        if (string.IsNullOrWhiteSpace(name) || name.Length < 2) return null;
+        
+        // Filter out non-course lines
+        if (name.Contains("TOTAL", StringComparison.OrdinalIgnoreCase)) return null;
+        if (name.Contains("GPA", StringComparison.OrdinalIgnoreCase)) return null;
+        if (name.Contains("STANDING", StringComparison.OrdinalIgnoreCase)) return null;
+        if (name.Contains("CUMULATIVE", StringComparison.OrdinalIgnoreCase)) return null;
+        
+        // Find last number (points)
+        var lastNumberMatch = Regex.Match(line, @"(\d+\.\d+)$");
+        if (!lastNumberMatch.Success) return null;
+        
+        var pointsStr = lastNumberMatch.Groups[1].Value;
+        if (!double.TryParse(pointsStr, out var points)) return null;
+        
+        // Calculate credits from points and grade
+        string credits;
+        if (GradeValues.TryGetValue(grade, out var gradeVal) && gradeVal > 0)
         {
-            var name = match1.Groups[2].Value.Trim();
-            if (name.Length >= 3 && !name.Contains("TOTAL"))
-            {
-                return new ExtractedCourseDto
-                {
-                    Code = match1.Groups[1].Value.Trim(),
-                    Name = name,
-                    Grade = match1.Groups[3].Value.Trim(),
-                    Credits = match1.Groups[4].Value.Trim(),
-                    Term = term
-                };
-            }
+            var cred = points / gradeVal;
+            // Round to nearest 0.5
+            cred = Math.Round(cred * 2) / 2;
+            credits = cred == Math.Truncate(cred) ? $"{cred:F2}" : $"{cred:F2}";
+        }
+        else
+        {
+            // For P/W, credits = points
+            credits = points.ToString("F2");
         }
         
-        // Pattern 2: Code Name Credits Credits Grade Points (CSUSB style)
-        // e.g., "CSE2130 MACHINE ORGANIZATION 3.000 3.000 A 12.000"
-        var match2 = Regex.Match(normalized,
-            @"^([A-Z]{2,}\s*\d+[A-Z]?)\s+(.+?)\s+([\d.]+)\s+([\d.]+)\s+([A-FWP][+-]?)\s+(?:[\d.]+)");
-        
-        if (match2.Success)
+        return new ExtractedCourseDto
         {
-            var name = match2.Groups[2].Value.Trim();
-            if (name.Length >= 3 && !name.Contains("TOTAL"))
-            {
-                return new ExtractedCourseDto
-                {
-                    Code = match2.Groups[1].Value.Trim(),
-                    Name = name,
-                    Grade = match2.Groups[5].Value.Trim(),
-                    Credits = match2.Groups[3].Value.Trim(),
-                    Term = term
-                };
-            }
-        }
-        
-        return null;
+            Code = code,
+            Name = name,
+            Grade = grade,
+            Credits = credits,
+            Term = term
+        };
     }
 
     private static string CleanupJsonResponse(string response)
