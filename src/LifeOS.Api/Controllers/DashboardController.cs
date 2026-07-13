@@ -114,7 +114,7 @@ public class DashboardController : ControllerBase
             XpForNextLevel = xpForNextLevel - GetXpForLevel(level),
             XpInCurrentLevel = xpInCurrentLevel,
             WeeklyProgress = weeklyProgress,
-            TotalStreakDays = habits.Max(h => h.CurrentStreak)
+            TotalStreakDays = habits.Any() ? habits.Max(h => h.CurrentStreak) : 0
         });
     }
 
