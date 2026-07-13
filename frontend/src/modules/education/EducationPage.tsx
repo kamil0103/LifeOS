@@ -137,9 +137,7 @@ export default function EducationPage() {
       const formData = new FormData()
       formData.append('file', file)
 
-      const { data } = await api.post('/transcripts/extract-file', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      })
+      const { data } = await api.post('/transcripts/extract-file', formData)
       
       setExtractedData(data)
       setShowTranscriptModal(true)
