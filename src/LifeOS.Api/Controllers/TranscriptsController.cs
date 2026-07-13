@@ -147,7 +147,7 @@ public class TranscriptsController : ControllerBase
             _logger.LogInformation("PDF extraction: got {Length} readable characters from {FileName}", extracted.Length, file.FileName);
             if (!string.IsNullOrEmpty(extracted))
             {
-                _logger.LogDebug("Extracted text sample: {Sample}", extracted.Substring(0, Math.Min(500, extracted.Length)));
+                _logger.LogInformation("Extracted text sample:\n{Sample}", extracted.Substring(0, Math.Min(1000, extracted.Length)));
             }
             
             return extracted;
