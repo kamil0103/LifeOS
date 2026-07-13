@@ -233,16 +233,20 @@ public class TranscriptsController : ControllerBase
     private async Task<ExtractedTranscriptDto?> ExtractFromText(string text, CancellationToken ct)
     {
         var systemPrompt = "You are an academic transcript parser. Extract structured data from raw transcript text.";
-        var userPrompt = $"Extract structured data from this academic transcript text. The text may have formatting issues, extra spaces, or PDF artifacts - parse it intelligently.\n\nTRANSCRIPT TEXT:\n---\n{text.Substring(0, Math.Min(8000, text.Length))}\n---\n\nReturn ONLY valid JSON with this exact structure. If information is missing, use empty strings or empty arrays - NEVER return null for required fields:\n{{\n  \"institution\": {{\n    \"name\": \"<institution name>\",\n    \"type\": \"<university|community_college|other>\",\n    \"location\": \"<city, state or empty>\"\n  }},\n  \"degree\": {{\n    \"name\": \"<full degree name like Bachelor of Science in Computer Science>\",\n    \"field\": \"<field of study>\",\n    \"type\": \"<bachelors|masters|associates|certificate|other>\",\n    \"gpa\": \"<gpa if found>\",\n    \"honors\": \"<honors if found>\"\n  }},\n  \"courses\": [\n    {{\n      \"code\": \"<course code like CS 101>\",\n      \"name\": \"<course name>\",\n      \"grade\": \"<grade like A, B+, etc>\",\n      \"credits\": \"<credits like 3.00>\",\n      \"term\": \"<term like Fall 2023>\"\n    }}\n  ]\n}}\n\nLook for patterns like:\n- Institution names (often at top: 'University of X', 'College of Y')\n- Degrees (look for 'Bachelor', 'Master', 'Associate', 'Certificate')\n- Fields (look for 'in' before subject: 'Bachelor of Science in Computer Science')\n- GPA values (look for 'GPA:', 'Grade Point Average')\n- Course lines with codes, names, grades, credits\n\nIf this is clearly NOT a transcript, return empty strings and empty courses array.";
+        var userPrompt = $"Extract structured data from this academic transcript text. The text may have formatting issues, extra spaces, or PDF artifacts - parse it intelligently.\n\nTRANSCRIPT TEXT:\n---\n{text.Substring(0, Math.Min(8000, text.Length))}\n---\n\nReturn ONLY valid JSON with this exact structure. If information is missing, use empty strings or empty arrays - NEVER return null for required fields. Make sure all string values are properly escaped and the JSON is complete:\n{{\n  \"institution\": {{\n    \"name\": \"<institution name>\",\n    \"type\": \"<university|community_college|other>\",\n    \"location\": \"<city, state or empty>\"\n  }},\n  \"degree\": {{\n    \"name\": \"<full degree name like Bachelor of Science in Computer Science>\",\n    \"field\": \"<field of study>\",\n    \"type\": \"<bachelors|masters|associates|certificate|other>\",\n    \"gpa\": \"<gpa if found>\",\n    \"honors\": \"<honors if found>\"\n  }},\n  \"courses\": [\n    {{\n      \"code\": \"<course code like CS 101>\",\n      \"name\": \"<course name>\",\n      \"grade\": \"<grade like A, B+, etc>\",\n      \"credits\": \"<credits like 3.00>\",\n      \"term\": \"<term like Fall 2023>\"\n    }}\n  ]\n}}\n\nLook for patterns like:\n- Institution names (often at top: 'University of X', 'College of Y')\n- Degrees (look for 'Bachelor', 'Master', 'Associate', 'Certificate')\n- Fields (look for 'in' before subject: 'Bachelor of Science in Computer Science')\n- GPA values (look for 'GPA:', 'Grade Point Average')\n- Course lines with codes, names, grades, credits\n\nIf this is clearly NOT a transcript, return empty strings and empty courses array.";
 
 
         try
         {
             var jsonResponse = await _aiProvider.CompleteJsonAsync(systemPrompt, userPrompt, ct);
             
-            _logger.LogDebug("AI extraction response: {Response}", jsonResponse.Substring(0, Math.Min(200, jsonResponse.Length)));
+            _logger.LogInformation("AI raw response length: {Length}", jsonResponse.Length);
+            _logger.LogDebug("AI raw response: {Response}", jsonResponse.Substring(0, Math.Min(500, jsonResponse.Length)));
             
-            var result = JsonSerializer.Deserialize<ExtractedTranscriptDto>(jsonResponse, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            // Aggressive JSON cleanup
+            var cleaned = CleanupJsonResponse(jsonResponse);
+            
+            var result = JsonSerializer.Deserialize<ExtractedTranscriptDto>(cleaned, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
             return result;
         }
         catch (Exception ex)
@@ -250,6 +254,28 @@ public class TranscriptsController : ControllerBase
             _logger.LogError(ex, "Transcript extraction failed");
             return null;
         }
+    }
+
+    private static string CleanupJsonResponse(string response)
+    {
+        var cleaned = response.Trim();
+        
+        // Remove markdown code blocks
+        if (cleaned.StartsWith("```json")) cleaned = cleaned[7..];
+        else if (cleaned.StartsWith("```")) cleaned = cleaned[3..];
+        if (cleaned.EndsWith("```")) cleaned = cleaned[..^3];
+        
+        cleaned = cleaned.Trim();
+        
+        // Extract just the JSON object - find first { and last }
+        var firstBrace = cleaned.IndexOf('{');
+        var lastBrace = cleaned.LastIndexOf('}');
+        if (firstBrace >= 0 && lastBrace > firstBrace)
+        {
+            cleaned = cleaned[firstBrace..(lastBrace + 1)];
+        }
+        
+        return cleaned;
     }
 
     [HttpPost("save")]
