@@ -283,8 +283,10 @@ public class TranscriptsController : ControllerBase
         
         // Course pattern for concatenated transcript text
         // Code + Name(starts with uppercase) + Grade + Numbers, stopping before next code/term/end
-        var pattern = @"(?<![A-Z])([A-Z]{2,}\d+)([A-Z].+?)([A-FWP][+-]?)\s*([\d.]+(?:[\d.]+)*?)\s*(?=(?:[A-Z]{2,}\d+)|SEMESTER|CUMULATIVE|TERM|Dean's|In Good|\-{5,}|$)";
-        var matches = Regex.Matches(text, pattern);
+        // Common suffixes: S=Support, A/B/C/D=sections, H=Honors, L=Lab, N=Night, R=Recitation, W=Workshop, X/Y/Z=other
+        var suffixPattern = @"(?:[SABCDHLNRWXYZ](?=[A-Z]))?";
+        var coursePattern = $@"(?<![A-Z])([A-Z]{{2,}}\d+{suffixPattern})([A-Z].+?)([A-FWP][+-]?)\s*([\d.]+(?:[\d.]+)*?)\s*(?=(?:[A-Z]{{2,}}\d+)|SEMESTER|CUMULATIVE|TERM|Dean's|In Good|\-{{5,}}|$)";
+        var matches = Regex.Matches(text, coursePattern);
         
         foreach (Match m in matches)
         {
@@ -292,6 +294,9 @@ public class TranscriptsController : ControllerBase
             var name = m.Groups[2].Value.Trim();
             var grade = m.Groups[3].Value;
             var numbers = m.Groups[4].Value.Trim();
+            
+            // Strip trailing credit numbers from name (CSUSB format: "NAME3.0003.000")
+            name = Regex.Replace(name, @"\d+\.\d+(?:\d+\.\d+)*$", "").Trim();
             
             // Filter out non-course lines
             if (name.Contains("TOTAL", StringComparison.OrdinalIgnoreCase)) continue;
