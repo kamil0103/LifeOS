@@ -16,6 +16,10 @@ services:
       retries: 5
     networks:
       - lifeos
+    labels:
+      net.unraid.docker.managed: dockerman
+      net.unraid.docker.icon: https://raw.githubusercontent.com/kamil0103/LifeOS/main/logo.png
+      net.unraid.docker.webui: ""
 
   api:
     image: ghcr.io/kamil0103/lifeos/api:latest
@@ -40,6 +44,10 @@ services:
         condition: service_healthy
     networks:
       - lifeos
+    labels:
+      net.unraid.docker.managed: dockerman
+      net.unraid.docker.icon: https://raw.githubusercontent.com/kamil0103/LifeOS/main/logo.png
+      net.unraid.docker.webui: ""
 
   frontend:
     image: ghcr.io/kamil0103/lifeos/frontend:latest
@@ -49,6 +57,10 @@ services:
       - api
     networks:
       - lifeos
+    labels:
+      net.unraid.docker.managed: dockerman
+      net.unraid.docker.icon: https://raw.githubusercontent.com/kamil0103/LifeOS/main/logo.png
+      net.unraid.docker.webui: ""
 
   nginx:
     image: nginx:alpine
@@ -63,6 +75,10 @@ services:
       - frontend
     networks:
       - lifeos
+    labels:
+      net.unraid.docker.managed: dockerman
+      net.unraid.docker.icon: https://raw.githubusercontent.com/kamil0103/LifeOS/main/logo.png
+      net.unraid.docker.webui: http://[IP]:[PORT:80]
 
 networks:
   lifeos:
