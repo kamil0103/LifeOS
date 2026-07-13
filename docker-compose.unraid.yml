@@ -1,0 +1,69 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: lifeos-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-lifeos}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me_in_production}
+      POSTGRES_DB: ${POSTGRES_DB:-lifeos}
+    volumes:
+      - ${POSTGRES_DATA_PATH:-/mnt/user/appdata/lifeos/postgres}:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - lifeos
+
+  api:
+    image: ghcr.io/kamil0103/lifeos/api:latest
+    container_name: lifeos-api
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__DefaultConnection: Host=postgres;Database=${POSTGRES_DB:-lifeos};Username=${POSTGRES_USER:-lifeos};Password=${POSTGRES_PASSWORD:-change_me_in_production}
+      Jwt__Secret: ${JWT_SECRET}
+      Jwt__Issuer: ${JWT_ISSUER:-LifeOS}
+      Jwt__Audience: ${JWT_AUDIENCE:-LifeOS}
+      Ai__Provider: ${AI_PROVIDER:-gemini}
+      Ai__GeminiApiKey: ${GEMINI_API_KEY}
+      Ai__OllamaBaseUrl: ${OLLAMA_BASE_URL}
+      Ai__OllamaModel: ${OLLAMA_MODEL:-llama3.2}
+      MuseApiKey: ${MUSE_API_KEY}
+    volumes:
+      - ${DATA_PATH:-/mnt/user/appdata/lifeos/data}/generated:/app/data/generated
+      - ${DATA_PATH:-/mnt/user/appdata/lifeos/data}/uploads:/app/data/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - lifeos
+
+  frontend:
+    image: ghcr.io/kamil0103/lifeos/frontend:latest
+    container_name: lifeos-frontend
+    restart: unless-stopped
+    depends_on:
+      - api
+    networks:
+      - lifeos
+
+  nginx:
+    image: nginx:alpine
+    container_name: lifeos-nginx
+    restart: unless-stopped
+    ports:
+      - "${WEBUI_PORT:-8088}:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - api
+      - frontend
+    networks:
+      - lifeos
+
+networks:
+  lifeos:
+    driver: bridge
