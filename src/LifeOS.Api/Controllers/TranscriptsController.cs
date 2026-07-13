@@ -283,9 +283,7 @@ public class TranscriptsController : ControllerBase
         
         // Course pattern for concatenated transcript text
         // Code + Name(starts with uppercase) + Grade + Numbers, stopping before next code/term/end
-        // Common suffixes: S=Support, A/B/C/D=sections, H=Honors, L=Lab, N=Night, R=Recitation, W=Workshop, X/Y/Z=other
-        var suffixPattern = @"(?:[SABCDHLNRWXYZ](?=[A-Z]))?";
-        var coursePattern = $@"(?<![A-Z])([A-Z]{{2,}}\d+{suffixPattern})([A-Z].+?)([A-FWP][+-]?)\s*([\d.]+(?:[\d.]+)*?)\s*(?=(?:[A-Z]{{2,}}\d+)|SEMESTER|CUMULATIVE|TERM|Dean's|In Good|\-{{5,}}|$)";
+        var coursePattern = @"(?<![A-Z])([A-Z]{2,}\d+)([A-Z].+?)([A-FWP][+-]?)\s*([\d.]+(?:[\d.]+)*?)\s*(?=(?:[A-Z]{2,}\d+)|SEMESTER|CUMULATIVE|TERM|Dean's|In Good|\-{5,}|$)";
         var matches = Regex.Matches(text, coursePattern);
         
         foreach (Match m in matches)
@@ -297,6 +295,20 @@ public class TranscriptsController : ControllerBase
             
             // Strip trailing credit numbers from name (CSUSB format: "NAME3.0003.000")
             name = Regex.Replace(name, @"\d+\.\d+(?:\d+\.\d+)*$", "").Trim();
+            
+            // Post-process: if name starts with a single-letter suffix (S=Support, L=Lab, H=Honors)
+            // and the remainder looks like a real word, move the suffix to the code
+            if (name.Length >= 4 && "SLH".Contains(name[0]))
+            {
+                var remainder = name[1..];
+                // Heuristic: remainder should start with uppercase and contain a vowel in first 4 chars
+                var hasVowel = remainder[..Math.Min(4, remainder.Length)].Any(c => "AEIOUaeiou".Contains(c));
+                if (hasVowel)
+                {
+                    code += name[0];
+                    name = remainder;
+                }
+            }
             
             // Filter out non-course lines
             if (name.Contains("TOTAL", StringComparison.OrdinalIgnoreCase)) continue;
