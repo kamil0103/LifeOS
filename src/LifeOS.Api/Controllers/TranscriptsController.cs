@@ -246,6 +246,9 @@ public class TranscriptsController : ControllerBase
             // Aggressive JSON cleanup
             var cleaned = CleanupJsonResponse(jsonResponse);
             
+            _logger.LogInformation("Cleaned JSON length: {Length}", cleaned.Length);
+            _logger.LogDebug("Cleaned JSON: {Json}", cleaned.Substring(0, Math.Min(800, cleaned.Length)));
+            
             var result = JsonSerializer.Deserialize<ExtractedTranscriptDto>(cleaned, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
             return result;
         }
