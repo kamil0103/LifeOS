@@ -232,8 +232,12 @@ public class TranscriptsController : ControllerBase
 
     private async Task<ExtractedTranscriptDto?> ExtractFromText(string text, CancellationToken ct)
     {
+        // Pre-process: remove duplicate lines, headers, footers to reduce token count
+        var cleanedText = PreprocessTranscriptText(text);
+        var truncatedText = cleanedText.Length > 6000 ? cleanedText.Substring(0, 6000) : cleanedText;
+        
         var systemPrompt = "You are an academic transcript parser. Extract structured data from raw transcript text.";
-        var userPrompt = $"Extract structured data from this academic transcript text. The text may have formatting issues, extra spaces, or PDF artifacts - parse it intelligently.\n\nTRANSCRIPT TEXT:\n---\n{text.Substring(0, Math.Min(8000, text.Length))}\n---\n\nReturn ONLY valid JSON with this exact structure. If information is missing, use empty strings or empty arrays - NEVER return null for required fields. Make sure all string values are properly escaped and the JSON is complete:\n{{\n  \"institution\": {{\n    \"name\": \"<institution name>\",\n    \"type\": \"<university|community_college|other>\",\n    \"location\": \"<city, state or empty>\"\n  }},\n  \"degree\": {{\n    \"name\": \"<full degree name like Bachelor of Science in Computer Science>\",\n    \"field\": \"<field of study>\",\n    \"type\": \"<bachelors|masters|associates|certificate|other>\",\n    \"gpa\": \"<gpa if found>\",\n    \"honors\": \"<honors if found>\"\n  }},\n  \"courses\": [\n    {{\n      \"code\": \"<course code like CS 101>\",\n      \"name\": \"<course name>\",\n      \"grade\": \"<grade like A, B+, etc>\",\n      \"credits\": \"<credits like 3.00>\",\n      \"term\": \"<term like Fall 2023>\"\n    }}\n  ]\n}}\n\nLook for patterns like:\n- Institution names (often at top: 'University of X', 'College of Y')\n- Degrees (look for 'Bachelor', 'Master', 'Associate', 'Certificate')\n- Fields (look for 'in' before subject: 'Bachelor of Science in Computer Science')\n- GPA values (look for 'GPA:', 'Grade Point Average')\n- Course lines with codes, names, grades, credits\n\nIf this is clearly NOT a transcript, return empty strings and empty courses array.";
+        var userPrompt = $"Extract structured data from this academic transcript text. The text may have formatting issues, extra spaces, or PDF artifacts - parse it intelligently.\n\nTRANSCRIPT TEXT:\n---\n{truncatedText}\n---\n\nReturn ONLY valid JSON with this exact structure. If information is missing, use empty strings or empty arrays - NEVER return null for required fields. Make sure all string values are properly escaped and the JSON is complete:\n{{\n  \"institution\": {{\n    \"name\": \"<institution name>\",\n    \"type\": \"<university|community_college|other>\",\n    \"location\": \"<city, state or empty>\"\n  }},\n  \"degree\": {{\n    \"name\": \"<full degree name like Bachelor of Science in Computer Science>\",\n    \"field\": \"<field of study>\",\n    \"type\": \"<bachelors|masters|associates|certificate|other>\",\n    \"gpa\": \"<gpa if found>\",\n    \"honors\": \"<honors if found>\"\n  }},\n  \"courses\": [\n    {{\n      \"code\": \"<course code like CS 101>\",\n      \"name\": \"<course name>\",\n      \"grade\": \"<grade like A, B+, etc>\",\n      \"credits\": \"<credits like 3.00>\",\n      \"term\": \"<term like Fall 2023>\"\n    }}\n  ]\n}}\n\nLook for patterns like:\n- Institution names (often at top: 'University of X', 'College of Y')\n- Degrees (look for 'Bachelor', 'Master', 'Associate', 'Certificate')\n- Fields (look for 'in' before subject: 'Bachelor of Science in Computer Science')\n- GPA values (look for 'GPA:', 'Grade Point Average')\n- Course lines with codes, names, grades, credits\n\nIf this is clearly NOT a transcript, return empty strings and empty courses array.";
 
 
         try
@@ -264,6 +268,39 @@ public class TranscriptsController : ControllerBase
             _logger.LogError(ex, "Transcript extraction failed");
             return null;
         }
+    }
+
+    private static string PreprocessTranscriptText(string text)
+    {
+        var lines = text.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        var seen = new HashSet<string>();
+        var filtered = new List<string>();
+        
+        foreach (var line in lines)
+        {
+            var trimmed = line.Trim();
+            if (string.IsNullOrWhiteSpace(trimmed)) continue;
+            
+            // Skip common header/footer lines
+            var lower = trimmed.ToLowerInvariant();
+            if (lower.Contains("page ") && lower.Contains(" of ")) continue;
+            if (lower.Contains("copy of transcript")) continue;
+            if (lower.Contains("official transcript")) continue;
+            if (lower.Contains("raised seal not required")) continue;
+            if (lower.Contains("this official university transcript")) continue;
+            if (lower.Contains("send to:")) continue;
+            if (lower.Contains("print date:")) continue;
+            if (lower.Contains("federal and state laws")) continue;
+            if (lower.Contains("vice president")) continue;
+            if (trimmed.Length < 3) continue;
+            
+            // Deduplicate exact lines (PDFs often repeat headers on each page)
+            if (!seen.Add(trimmed)) continue;
+            
+            filtered.Add(trimmed);
+        }
+        
+        return string.Join("\n", filtered);
     }
 
     private static string CleanupJsonResponse(string response)
