@@ -24,7 +24,7 @@ public class GeminiProvider : IAiProvider
     public async Task<string> CompleteAsync(string systemPrompt, string userPrompt, CancellationToken ct = default)
     {
         var apiKey = _config["Ai:GeminiApiKey"]!;
-        var model = _config["Ai:GeminiModel"] ?? "gemini-2.5-pro";
+        var model = _config["Ai:GeminiModel"] ?? "gemini-3.5-flash";
         var url = $"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={apiKey}";
 
         var requestBody = new
@@ -64,7 +64,7 @@ public class GeminiProvider : IAiProvider
     public async Task<string> CompleteJsonAsync(string systemPrompt, string userPrompt, CancellationToken ct = default)
     {
         var apiKey = _config["Ai:GeminiApiKey"]!;
-        var model = _config["Ai:GeminiModel"] ?? "gemini-2.5-pro";
+        var model = _config["Ai:GeminiModel"] ?? "gemini-3.5-flash";
         var url = $"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={apiKey}";
 
         // Try with JSON mode first
