@@ -296,9 +296,9 @@ public class TranscriptsController : ControllerBase
             // Strip trailing credit numbers from name (CSUSB format: "NAME3.0003.000")
             name = Regex.Replace(name, @"\d+\.\d+(?:\d+\.\d+)*$", "").Trim();
             
-            // Post-process: if name starts with a single-letter suffix (S=Support, L=Lab, H=Honors)
+            // Post-process: if name starts with a single-letter suffix (S=Support, L=Lab)
             // and the remainder looks like a real word, move the suffix to the code
-            if (name.Length >= 4 && "SLH".Contains(name[0]))
+            if (name.Length >= 4 && "SL".Contains(name[0]))
             {
                 var remainder = name[1..];
                 // Heuristic: remainder should start with uppercase and contain a vowel in first 4 chars
