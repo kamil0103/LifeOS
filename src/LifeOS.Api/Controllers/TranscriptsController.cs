@@ -232,75 +232,120 @@ public class TranscriptsController : ControllerBase
 
     private async Task<ExtractedTranscriptDto?> ExtractFromText(string text, CancellationToken ct)
     {
-        // Pre-process: remove duplicate lines, headers, footers to reduce token count
-        var cleanedText = PreprocessTranscriptText(text);
-        var truncatedText = cleanedText.Length > 6000 ? cleanedText.Substring(0, 6000) : cleanedText;
+        var truncatedText = text.Length > 8000 ? text.Substring(0, 8000) : text;
         
-        var systemPrompt = "You are an academic transcript parser. Extract structured data from raw transcript text.";
-        var userPrompt = $"Extract structured data from this academic transcript text. The text may have formatting issues, extra spaces, or PDF artifacts - parse it intelligently.\n\nTRANSCRIPT TEXT:\n---\n{truncatedText}\n---\n\nReturn ONLY valid JSON with this exact structure. If information is missing, use empty strings or empty arrays - NEVER return null for required fields. Make sure all string values are properly escaped and the JSON is complete:\n{{\n  \"institution\": {{\n    \"name\": \"<institution name>\",\n    \"type\": \"<university|community_college|other>\",\n    \"location\": \"<city, state or empty>\"\n  }},\n  \"degree\": {{\n    \"name\": \"<full degree name like Bachelor of Science in Computer Science>\",\n    \"field\": \"<field of study>\",\n    \"type\": \"<bachelors|masters|associates|certificate|other>\",\n    \"gpa\": \"<gpa if found>\",\n    \"honors\": \"<honors if found>\"\n  }},\n  \"courses\": [\n    {{\n      \"code\": \"<course code like CS 101>\",\n      \"name\": \"<course name>\",\n      \"grade\": \"<grade like A, B+, etc>\",\n      \"credits\": \"<credits like 3.00>\",\n      \"term\": \"<term like Fall 2023>\"\n    }}\n  ]\n}}\n\nLook for patterns like:\n- Institution names (often at top: 'University of X', 'College of Y')\n- Degrees (look for 'Bachelor', 'Master', 'Associate', 'Certificate')\n- Fields (look for 'in' before subject: 'Bachelor of Science in Computer Science')\n- GPA values (look for 'GPA:', 'Grade Point Average')\n- Course lines with codes, names, grades, credits\n\nIf this is clearly NOT a transcript, return empty strings and empty courses array.";
+        // Step 1: AI extracts institution and degree (small JSON, always fits in token limit)
+        var metaSystemPrompt = "You are an academic transcript parser. Extract only the institution and degree metadata.";
+        var metaUserPrompt = $"From this transcript text, extract the institution name, type, location, degree name, field, GPA, and honors. Return compact JSON:\n\nTRANSCRIPT TEXT:\n---\n{truncatedText}\n---\n\nReturn ONLY this JSON (use empty strings if not found):\n{{\"institution\":{{\"name\":\"...\",\"type\":\"university|community_college|other\",\"location\":\"...\"}},\"degree\":{{\"name\":\"...\",\"field\":\"...\",\"type\":\"bachelors|masters|associates|certificate|other\",\"gpa\":\"...\",\"honors\":\"...\"}}}}";
 
-
+        ExtractedTranscriptDto? metaResult = null;
         try
         {
-            var jsonResponse = await _aiProvider.CompleteJsonAsync(systemPrompt, userPrompt, ct);
-            
-            _logger.LogInformation("AI raw response length: {Length}", jsonResponse.Length);
-            _logger.LogDebug("AI raw response: {Response}", jsonResponse.Substring(0, Math.Min(500, jsonResponse.Length)));
-            
-            // Aggressive JSON cleanup
-            var cleaned = CleanupJsonResponse(jsonResponse);
-            
-            _logger.LogInformation("Cleaned JSON length: {Length}", cleaned.Length);
-            
-            try
-            {
-                var result = JsonSerializer.Deserialize<ExtractedTranscriptDto>(cleaned, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-                return result;
-            }
-            catch (JsonException jsonEx)
-            {
-                _logger.LogError(jsonEx, "JSON deserialization failed. Full cleaned JSON:\n{Json}", cleaned);
-                return null;
-            }
+            var metaJson = await _aiProvider.CompleteJsonAsync(metaSystemPrompt, metaUserPrompt, ct);
+            metaJson = CleanupJsonResponse(metaJson);
+            _logger.LogInformation("Meta AI response length: {Length}", metaJson.Length);
+            metaResult = JsonSerializer.Deserialize<ExtractedTranscriptDto>(metaJson, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Transcript extraction failed");
-            return null;
+            _logger.LogWarning(ex, "AI metadata extraction failed, will use local parsing only");
         }
+
+        metaResult ??= new ExtractedTranscriptDto();
+
+        // Step 2: Parse courses locally with regex (reliable, no token limits)
+        var courses = ParseCoursesFromText(text);
+        metaResult.Courses = courses;
+
+        return metaResult;
     }
 
-    private static string PreprocessTranscriptText(string text)
+    private static List<ExtractedCourseDto> ParseCoursesFromText(string text)
     {
-        var lines = text.Split('\n', StringSplitOptions.RemoveEmptyEntries);
-        var seen = new HashSet<string>();
-        var filtered = new List<string>();
+        var courses = new List<ExtractedCourseDto>();
+        var lines = text.Split('\n');
         
-        foreach (var line in lines)
+        string? currentTerm = null;
+        
+        foreach (var rawLine in lines)
         {
-            var trimmed = line.Trim();
-            if (string.IsNullOrWhiteSpace(trimmed)) continue;
+            var line = rawLine.Trim();
+            if (string.IsNullOrWhiteSpace(line)) continue;
             
-            // Skip common header/footer lines
-            var lower = trimmed.ToLowerInvariant();
-            if (lower.Contains("page ") && lower.Contains(" of ")) continue;
-            if (lower.Contains("copy of transcript")) continue;
-            if (lower.Contains("official transcript")) continue;
-            if (lower.Contains("raised seal not required")) continue;
-            if (lower.Contains("this official university transcript")) continue;
-            if (lower.Contains("send to:")) continue;
-            if (lower.Contains("print date:")) continue;
-            if (lower.Contains("federal and state laws")) continue;
-            if (lower.Contains("vice president")) continue;
-            if (trimmed.Length < 3) continue;
+            // Detect term headers like "Fall Semester 2021" or "Summer Term 2021"
+            var termMatch = Regex.Match(line, @"(Fall|Spring|Summer|Winter)\s*(Semester|Term|Session|Intersession)\s*(\d{4})", RegexOptions.IgnoreCase);
+            if (termMatch.Success)
+            {
+                currentTerm = $"{termMatch.Groups[1].Value} {termMatch.Groups[2].Value} {termMatch.Groups[3].Value}";
+                continue;
+            }
             
-            // Deduplicate exact lines (PDFs often repeat headers on each page)
-            if (!seen.Add(trimmed)) continue;
-            
-            filtered.Add(trimmed);
+            var course = TryParseCourseLine(line, currentTerm);
+            if (course != null && !string.IsNullOrWhiteSpace(course.Name))
+            {
+                courses.Add(course);
+            }
         }
         
-        return string.Join("\n", filtered);
+        return courses;
+    }
+
+    private static ExtractedCourseDto? TryParseCourseLine(string line, string? term)
+    {
+        // Normalize multiple spaces to single space
+        var normalized = Regex.Replace(line, @"\s+", " ");
+        
+        // Filter out obvious non-course lines
+        if (normalized.Contains("TOTAL", StringComparison.OrdinalIgnoreCase)) return null;
+        if (normalized.Contains("GPA", StringComparison.OrdinalIgnoreCase)) return null;
+        if (normalized.Contains("STANDING", StringComparison.OrdinalIgnoreCase)) return null;
+        if (normalized.Contains("Dean's List", StringComparison.OrdinalIgnoreCase)) return null;
+        if (normalized.Contains("CUMULATIVE", StringComparison.OrdinalIgnoreCase)) return null;
+        if (normalized.Contains("SEMESTER", StringComparison.OrdinalIgnoreCase)) return null;
+        
+        // Pattern 1: Code Name Grade Credits ... (El Camino style)
+        // e.g., "MATH170 Trigonometry A 3.00 3.00 12.00"
+        var match1 = Regex.Match(normalized, 
+            @"^([A-Z]{2,}\s*\d+[A-Z]?)\s+(.+?)\s+([A-FWP][+-]?)\s+([\d.]+)\s*(?:[\d.]+)?\s*(?:[\d.]+)?");
+        
+        if (match1.Success)
+        {
+            var name = match1.Groups[2].Value.Trim();
+            if (name.Length >= 3 && !name.Contains("TOTAL"))
+            {
+                return new ExtractedCourseDto
+                {
+                    Code = match1.Groups[1].Value.Trim(),
+                    Name = name,
+                    Grade = match1.Groups[3].Value.Trim(),
+                    Credits = match1.Groups[4].Value.Trim(),
+                    Term = term
+                };
+            }
+        }
+        
+        // Pattern 2: Code Name Credits Credits Grade Points (CSUSB style)
+        // e.g., "CSE2130 MACHINE ORGANIZATION 3.000 3.000 A 12.000"
+        var match2 = Regex.Match(normalized,
+            @"^([A-Z]{2,}\s*\d+[A-Z]?)\s+(.+?)\s+([\d.]+)\s+([\d.]+)\s+([A-FWP][+-]?)\s+(?:[\d.]+)");
+        
+        if (match2.Success)
+        {
+            var name = match2.Groups[2].Value.Trim();
+            if (name.Length >= 3 && !name.Contains("TOTAL"))
+            {
+                return new ExtractedCourseDto
+                {
+                    Code = match2.Groups[1].Value.Trim(),
+                    Name = name,
+                    Grade = match2.Groups[5].Value.Trim(),
+                    Credits = match2.Groups[3].Value.Trim(),
+                    Term = term
+                };
+            }
+        }
+        
+        return null;
     }
 
     private static string CleanupJsonResponse(string response)
