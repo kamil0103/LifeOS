@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import api from '@/lib/api'
 import { useAuthStore } from '@/hooks/useAuthStore'
 import { Button } from '@/components/ui/button'
-import { Loader2, LayoutDashboard, ArrowRight, UserPlus } from 'lucide-react'
+import { Loader2, ArrowRight, UserPlus } from 'lucide-react'
 
 export default function RegisterPage() {
   const navigate = useNavigate()

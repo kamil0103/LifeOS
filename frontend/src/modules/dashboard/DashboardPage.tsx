@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import api from '@/lib/api'
 import { Button } from '@/components/ui/button'
-import { Loader2, Check, Flame, Briefcase, Code, Target, ChevronRight, Sparkles, AlertTriangle, Lightbulb, Code2, BookOpen, Zap, Trophy, Star } from 'lucide-react'
+import { Loader2, Check, Flame, Briefcase, Code, Target, ChevronRight, Sparkles, AlertTriangle, Lightbulb, Code2, BookOpen, Zap, Trophy, Star, BrainCircuit } from 'lucide-react'
 
 interface TodayHabit {
   id: string
