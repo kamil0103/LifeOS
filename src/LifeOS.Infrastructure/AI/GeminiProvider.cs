@@ -24,7 +24,8 @@ public class GeminiProvider : IAiProvider
     public async Task<string> CompleteAsync(string systemPrompt, string userPrompt, CancellationToken ct = default)
     {
         var apiKey = _config["Ai:GeminiApiKey"]!;
-        var url = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={apiKey}";
+        var model = _config["Ai:GeminiModel"] ?? "gemini-2.5-pro";
+        var url = $"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={apiKey}";
 
         var requestBody = new
         {
@@ -32,7 +33,7 @@ public class GeminiProvider : IAiProvider
             {
                 new { role = "user", parts = new[] { new { text = $"{systemPrompt}\n\n{userPrompt}" } } }
             },
-            generationConfig = new { temperature = 0.2, maxOutputTokens = 4096 }
+            generationConfig = new { temperature = 0.2, maxOutputTokens = 8192 }
         };
 
         var json = JsonSerializer.Serialize(requestBody);
@@ -63,7 +64,7 @@ public class GeminiProvider : IAiProvider
     public async Task<string> CompleteJsonAsync(string systemPrompt, string userPrompt, CancellationToken ct = default)
     {
         var apiKey = _config["Ai:GeminiApiKey"]!;
-        var model = _config["Ai:GeminiModel"] ?? "gemini-2.5-flash";
+        var model = _config["Ai:GeminiModel"] ?? "gemini-2.5-pro";
         var url = $"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={apiKey}";
 
         // Try with JSON mode first
