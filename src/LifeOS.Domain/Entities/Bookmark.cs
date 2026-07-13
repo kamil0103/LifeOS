@@ -10,5 +10,5 @@ public class Bookmark : BaseEntity
 
     public string? Note { get; set; }
     public string Color { get; set; } = "yellow";
-    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+    public new DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }

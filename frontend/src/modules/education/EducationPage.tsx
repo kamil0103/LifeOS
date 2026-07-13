@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import api from '@/lib/api'
 import { Button } from '@/components/ui/button'
-import { Loader2, Plus, Trash2 } from 'lucide-react'
+import { Loader2, Plus, Trash2, Upload, Sparkles } from 'lucide-react'
 
 interface Course {
   id: string
@@ -42,6 +42,10 @@ export default function EducationPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [showAddInst, setShowAddInst] = useState(false)
   const [newInst, setNewInst] = useState({ name: '', institutionType: 'university', location: '' })
+  const [transcriptText, setTranscriptText] = useState('')
+  const [isExtracting, setIsExtracting] = useState(false)
+  const [extractedData, setExtractedData] = useState<any | null>(null)
+  const [showTranscriptModal, setShowTranscriptModal] = useState(false)
 
   useEffect(() => {
     loadInstitutions()
@@ -77,6 +81,39 @@ export default function EducationPage() {
     }
   }
 
+  const extractTranscript = async () => {
+    if (!transcriptText.trim() || transcriptText.length < 50) {
+      alert('Please paste at least 50 characters of transcript text')
+      return
+    }
+    setIsExtracting(true)
+    try {
+      const { data } = await api.post('/transcripts/extract', { text: transcriptText })
+      setExtractedData(data)
+      setShowTranscriptModal(true)
+    } catch (err) {
+      console.error(err)
+      alert('Extraction failed')
+    } finally {
+      setIsExtracting(false)
+    }
+  }
+
+  const saveExtracted = async () => {
+    if (!extractedData) return
+    try {
+      await api.post('/transcripts/save', extractedData)
+      alert('Education data saved!')
+      setShowTranscriptModal(false)
+      setTranscriptText('')
+      setExtractedData(null)
+      loadInstitutions()
+    } catch (err) {
+      console.error(err)
+      alert('Save failed')
+    }
+  }
+
   if (isLoading) {
     return (
       <div className="p-8 flex items-center justify-center">
@@ -95,6 +132,26 @@ export default function EducationPage() {
         <Button onClick={() => setShowAddInst(true)}>
           <Plus className="mr-2 h-4 w-4" />
           Add Institution
+        </Button>
+      </div>
+
+      {/* Transcript Upload */}
+      <div className="mb-6 bg-card border rounded-lg p-6 shadow-sm">
+        <h3 className="text-lg font-semibold mb-2 flex items-center gap-2">
+          <Upload className="h-5 w-5 text-primary" />
+          Transcript Upload
+        </h3>
+        <p className="text-sm text-muted-foreground mb-3">Paste your transcript text and let AI extract courses, institutions, and degrees.</p>
+        <textarea
+          className="w-full px-3 py-2 border rounded-md bg-background text-sm mb-3"
+          rows={4}
+          placeholder="Paste transcript text here..."
+          value={transcriptText}
+          onChange={e => setTranscriptText(e.target.value)}
+        />
+        <Button onClick={extractTranscript} disabled={isExtracting}>
+          {isExtracting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
+          Extract with AI
         </Button>
       </div>
 
@@ -203,6 +260,42 @@ export default function EducationPage() {
           </div>
         ))}
       </div>
+
+      {/* Transcript Review Modal */}
+      {showTranscriptModal && extractedData && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowTranscriptModal(false)}>
+          <div className="bg-card border rounded-lg p-6 w-[600px] max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <h2 className="text-xl font-semibold mb-4">Review Extracted Data</h2>
+            <div className="space-y-4">
+              <div>
+                <h3 className="text-sm font-medium text-muted-foreground">Institution</h3>
+                <p className="font-medium">{extractedData.institution?.name}</p>
+                <p className="text-sm">{extractedData.institution?.type} · {extractedData.institution?.location}</p>
+              </div>
+              <div>
+                <h3 className="text-sm font-medium text-muted-foreground">Degree</h3>
+                <p className="font-medium">{extractedData.degree?.name}</p>
+                <p className="text-sm">{extractedData.degree?.field} · {extractedData.degree?.type}</p>
+                {extractedData.degree?.gpa && <p className="text-sm">GPA: {extractedData.degree.gpa}</p>}
+              </div>
+              <div>
+                <h3 className="text-sm font-medium text-muted-foreground">Courses ({extractedData.courses?.length})</h3>
+                <div className="space-y-1">
+                  {extractedData.courses?.map((c: any, i: number) => (
+                    <div key={i} className="text-sm border-b pb-1">
+                      {c.code} {c.name} · Grade: {c.grade} · Credits: {c.credits}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="flex gap-2 mt-4">
+              <Button onClick={saveExtracted}>Save to Education</Button>
+              <Button variant="outline" onClick={() => setShowTranscriptModal(false)}>Cancel</Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

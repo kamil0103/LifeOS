@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import api from '@/lib/api'
 import { Button } from '@/components/ui/button'
-import { Loader2, FileText, Save, Download } from 'lucide-react'
+import { Loader2, FileText, Save, Download, Shield } from 'lucide-react'
 
 interface ResumeProfile {
   fullName: string
@@ -84,10 +84,40 @@ export default function ResumeEditorPage() {
   const [isGenerating, setIsGenerating] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [activeTab, setActiveTab] = useState<'edit' | 'versions'>('edit')
+  const [atsResult, setAtsResult] = useState<any | null>(null)
+  const [showAtsModal, setShowAtsModal] = useState(false)
+  const [isCheckingAts, setIsCheckingAts] = useState(false)
+  const [selectedJobId, setSelectedJobId] = useState('')
+  const [savedJobs, setSavedJobs] = useState<Array<{ id: string; title: string; company: string }>>([])
 
   useEffect(() => {
     loadData()
+    loadSavedJobs()
   }, [])
+
+  const loadSavedJobs = async () => {
+    try {
+      const { data } = await api.get('/jobs')
+      setSavedJobs(data.map((j: any) => ({ id: j.id, title: j.title, company: j.company })))
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
+  const checkAts = async () => {
+    if (!selectedJobId) return
+    setIsCheckingAts(true)
+    try {
+      const { data } = await api.post('/ats/check', { jobId: selectedJobId })
+      setAtsResult(data)
+      setShowAtsModal(true)
+    } catch (err) {
+      console.error(err)
+      alert('ATS check failed')
+    } finally {
+      setIsCheckingAts(false)
+    }
+  }
 
   const loadData = async () => {
     setIsLoading(true)
@@ -270,6 +300,31 @@ export default function ResumeEditorPage() {
             </div>
           </div>
 
+          {/* ATS Check */}
+          <div className="bg-card border rounded-lg p-6">
+            <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
+              <Shield className="h-5 w-5 text-primary" />
+              ATS Check
+            </h2>
+            <p className="text-sm text-muted-foreground mb-3">Check how well your resume matches a specific job description.</p>
+            <div className="flex gap-2">
+              <select
+                className="flex-1 px-3 py-2 border rounded-md bg-background text-sm"
+                value={selectedJobId}
+                onChange={e => setSelectedJobId(e.target.value)}
+              >
+                <option value="">Select a job...</option>
+                {savedJobs.map(job => (
+                  <option key={job.id} value={job.id}>{job.title} at {job.company}</option>
+                ))}
+              </select>
+              <Button onClick={checkAts} disabled={isCheckingAts || !selectedJobId}>
+                {isCheckingAts ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Shield className="mr-2 h-4 w-4" />}
+                Check
+              </Button>
+            </div>
+          </div>
+
           {/* Section Order */}
           <div className="bg-card border rounded-lg p-6">
             <h2 className="text-lg font-semibold mb-4">Sections</h2>
@@ -416,6 +471,35 @@ export default function ResumeEditorPage() {
               </div>
             ))
           )}
+        </div>
+      )}
+
+      {/* ATS Check Modal */}
+      {showAtsModal && atsResult && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowAtsModal(false)}>
+          <div className="bg-card border rounded-lg p-6 w-[600px] max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <h2 className="text-xl font-semibold mb-4">ATS Check Results</h2>
+            <div className="text-center mb-4">
+              <p className="text-4xl font-bold text-primary">{atsResult.score}%</p>
+              <p className="text-sm text-muted-foreground">ATS Score</p>
+            </div>
+            <p className="text-sm mb-4">{atsResult.summary}</p>
+            {atsResult.missingKeywords?.length > 0 && (
+              <div className="mb-3">
+                <h3 className="text-sm font-medium text-yellow-500">Missing Keywords</h3>
+                <p className="text-sm">{atsResult.missingKeywords.join(', ')}</p>
+              </div>
+            )}
+            {atsResult.suggestions?.length > 0 && (
+              <div className="mb-3">
+                <h3 className="text-sm font-medium">Suggestions</h3>
+                <ul className="text-sm list-disc pl-4">
+                  {atsResult.suggestions.map((s: string, i: number) => <li key={i}>{s}</li>)}
+                </ul>
+              </div>
+            )}
+            <Button onClick={() => setShowAtsModal(false)}>Close</Button>
+          </div>
         </div>
       )}
     </div>

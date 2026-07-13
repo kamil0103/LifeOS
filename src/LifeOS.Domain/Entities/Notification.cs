@@ -10,6 +10,6 @@ public class Notification : BaseEntity
     public string Type { get; set; } = "info"; // info, warning, success, habit, mission
     public string? ActionUrl { get; set; }
     public bool IsRead { get; set; } = false;
-    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+    public new DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset? ReadAt { get; set; }
 }
