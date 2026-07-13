@@ -35,11 +35,11 @@ public class AiCoachController : ControllerBase
     public async Task<ActionResult<DailyMissionDto>> GenerateMission(CancellationToken ct)
     {
         var userId = GetUserId();
-        var today = DateTimeOffset.UtcNow.Date;
+        var today = new DateTimeOffset(DateTimeOffset.UtcNow.Date, TimeSpan.Zero);
 
         // Check if already generated today
         var existing = await _context.DailyMissions
-            .FirstOrDefaultAsync(m => m.UserId == userId && m.MissionDate == today, ct);
+            .FirstOrDefaultAsync(m => m.UserId == userId && m.MissionDate.Date == today.Date, ct);
 
         if (existing != null)
         {
@@ -173,11 +173,11 @@ public class AiCoachController : ControllerBase
     public async Task<ActionResult<DailyMissionDto>> GetTodayMission(CancellationToken ct)
     {
         var userId = GetUserId();
-        var today = DateTimeOffset.UtcNow.Date;
+        var today = new DateTimeOffset(DateTimeOffset.UtcNow.Date);
 
         var mission = await _context.DailyMissions
             .AsNoTracking()
-            .FirstOrDefaultAsync(m => m.UserId == userId && m.MissionDate == today, ct);
+            .FirstOrDefaultAsync(m => m.UserId == userId && m.MissionDate.Date == today.Date, ct);
 
         if (mission == null)
             return NotFound("No mission generated yet. Call POST /api/aicoach/generate-mission first.");
@@ -272,7 +272,7 @@ public class AiCoachController : ControllerBase
 public class DailyMissionDto
 {
     public Guid Id { get; set; }
-    public DateTime Date { get; set; }
+    public DateTimeOffset Date { get; set; }
     public List<MissionPriority> Priorities { get; set; } = [];
     public string? AiSummary { get; set; }
     public bool IsCompleted { get; set; }
