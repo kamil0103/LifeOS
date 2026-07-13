@@ -87,6 +87,7 @@ public class TranscriptsController : ControllerBase
         }
 
         _logger.LogInformation("Extracted {Length} characters from uploaded file", text.Length);
+        _logger.LogDebug("First 1000 chars of extracted text: {Sample}", text.Substring(0, Math.Min(1000, text.Length)));
 
         var result = await ExtractFromText(text, ct);
         
@@ -118,55 +119,62 @@ public class TranscriptsController : ControllerBase
             var bytes = ms.ToArray();
             var content = Encoding.UTF8.GetString(bytes);
             
-            // Try to extract text from PDF content
-            // PDF text objects are between BT and ET markers
             var textBuilder = new StringBuilder();
             
-            // Look for text between ( and ) in PDF streams
-            // This regex finds text strings in PDF content
-            var textMatches = Regex.Matches(content, @"\(([^)]{2,200})\)");
-            foreach (Match match in textMatches)
+            // Method 1: Extract text between BT and ET markers (PDF text objects)
+            var btMatches = Regex.Matches(content, @"BT\s*(.*?)\s*ET", RegexOptions.Singleline);
+            foreach (Match btMatch in btMatches)
             {
-                var txt = match.Groups[1].Value;
-                // Filter out common PDF metadata and garbage
-                if (txt.Length > 2 && 
-                    !txt.StartsWith("/") && 
-                    !txt.Contains("obj") &&
-                    !txt.Contains("endobj") &&
-                    !txt.Contains("stream") &&
-                    !Regex.IsMatch(txt, @"^\d+ \d+"))
+                var textInside = btMatch.Groups[1].Value;
+                // Find all text strings inside parentheses
+                var stringMatches = Regex.Matches(textInside, @"\(([^)]{2,300})\)");
+                foreach (Match sm in stringMatches)
                 {
-                    textBuilder.Append(txt).Append(' ');
+                    var txt = sm.Groups[1].Value;
+                    if (IsReadableText(txt))
+                    {
+                        textBuilder.Append(txt).Append(' ');
+                    }
                 }
             }
 
             var extracted = textBuilder.ToString();
             
-            // If regex extraction didn't work well, try another approach
-            if (extracted.Length < 100)
+            // Method 2: If BT/ET extraction didn't work, try finding all parenthesized strings
+            if (extracted.Length < 200)
             {
-                // Try to find text streams in the PDF
                 textBuilder.Clear();
-                var lines = content.Split('\n', '\r');
-                foreach (var line in lines)
+                var allMatches = Regex.Matches(content, @"\(([^)]{3,300})\)");
+                foreach (Match match in allMatches)
                 {
-                    var cleaned = line.Trim();
-                    // Look for lines that contain readable text
-                    if (cleaned.Length > 3 && 
-                        cleaned.Length < 200 &&
-                        Regex.IsMatch(cleaned, @"[a-zA-Z]{3,}") &&
-                        !cleaned.StartsWith("%") &&
-                        !cleaned.StartsWith("<") &&
-                        !cleaned.StartsWith(">") &&
-                        !cleaned.StartsWith("/"))
+                    var txt = match.Groups[1].Value;
+                    if (IsReadableText(txt))
                     {
-                        textBuilder.Append(cleaned).Append('\n');
+                        textBuilder.Append(txt).Append(' ');
                     }
                 }
                 extracted = textBuilder.ToString();
             }
 
-            _logger.LogInformation("PDF extraction: got {Length} characters from {FileName}", extracted.Length, file.FileName);
+            // Method 3: Look for text that appears after PDF operators like Tj, TJ, '")
+            if (extracted.Length < 200)
+            {
+                textBuilder.Clear();
+                var tjMatches = Regex.Matches(content, @"\(([^)]{2,200})\)\s*(?:Tj|TJ|\')");
+                foreach (Match match in tjMatches)
+                {
+                    var txt = match.Groups[1].Value;
+                    if (IsReadableText(txt))
+                    {
+                        textBuilder.Append(txt).Append(' ');
+                    }
+                }
+                extracted = textBuilder.ToString();
+            }
+
+            _logger.LogInformation("PDF extraction: got {Length} readable characters from {FileName}", extracted.Length, file.FileName);
+            _logger.LogDebug("Extracted text sample: {Sample}", extracted.Substring(0, Math.Min(500, extracted.Length)));
+            
             return extracted;
         }
         catch (Exception ex)
@@ -176,10 +184,35 @@ public class TranscriptsController : ControllerBase
         }
     }
 
+    private bool IsReadableText(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text) || text.Length < 3) return false;
+        
+        // Must contain actual words (letters with spaces)
+        if (!Regex.IsMatch(text, @"[a-zA-Z]{2,}")) return false;
+        
+        // Filter out PDF commands and metadata
+        var lower = text.ToLowerInvariant();
+        if (lower.Contains("obj") && lower.Contains("endobj")) return false;
+        if (text.StartsWith("/")) return false;
+        if (text.StartsWith("<<") || text.StartsWith(">>") || text.StartsWith("[")) return false;
+        if (Regex.IsMatch(text, @"^\d+ \d+ \d+")) return false;
+        if (text.Contains("stream") || text.Contains("endstream")) return false;
+        if (text.Contains("xref") || text.Contains("trailer")) return false;
+        
+        // Should have reasonable ratio of letters to total characters
+        var letters = text.Count(char.IsLetter);
+        var ratio = (double)letters / text.Length;
+        if (ratio < 0.5 && text.Length > 20) return false; // Too much non-letter content
+        
+        return true;
+    }
+
     private async Task<ExtractedTranscriptDto?> ExtractFromText(string text, CancellationToken ct)
     {
-        var systemPrompt = "You are an academic transcript parser. Extract structured data from raw transcript text. Return JSON only.";
-        var userPrompt = $"Extract from this transcript text:\n\n{text.Substring(0, Math.Min(8000, text.Length))}\n\nReturn ONLY valid JSON with this exact structure:\n{{\n  \"institution\": {{\n    \"name\": \"<institution name or empty string>\",\n    \"type\": \"<university|community_college|other>\",\n    \"location\": \"<city, state or empty>\"\n  }},\n  \"degree\": {{\n    \"name\": \"<degree name or empty string>\",\n    \"field\": \"<field of study or empty>\",\n    \"type\": \"<bachelors|masters|associates|certificate|other>\",\n    \"gpa\": \"<gpa or empty>\",\n    \"honors\": \"<honors or empty>\"\n  }},\n  \"courses\": [\n    {{\n      \"code\": \"<course code or empty>\",\n      \"name\": \"<course name or empty>\",\n      \"grade\": \"<grade or empty>\",\n      \"credits\": \"<credits or empty>\",\n      \"term\": \"<term or empty>\"\n    }}\n  ]\n}}\n\nIf the text is not a transcript or contains no extractable data, return empty strings and an empty courses array.";
+        var systemPrompt = "You are an academic transcript parser. Extract structured data from raw transcript text.";
+        var userPrompt = $"Extract structured data from this academic transcript text. The text may have formatting issues, extra spaces, or PDF artifacts - parse it intelligently.\n\nTRANSCRIPT TEXT:\n---\n{text.Substring(0, Math.Min(8000, text.Length))}\n---\n\nReturn ONLY valid JSON with this exact structure. If information is missing, use empty strings or empty arrays - NEVER return null for required fields:\n{{\n  \"institution\": {{\n    \"name\": \"<institution name>\",\n    \"type\": \"<university|community_college|other>\",\n    \"location\": \"<city, state or empty>\"\n  }},\n  \"degree\": {{\n    \"name\": \"<full degree name like Bachelor of Science in Computer Science>\",\n    \"field\": \"<field of study>\",\n    \"type\": \"<bachelors|masters|associates|certificate|other>\",\n    \"gpa\": \"<gpa if found>\",\n    \"honors\": \"<honors if found>\"\n  }},\n  \"courses\": [\n    {{\n      \"code\": \"<course code like CS 101>\",\n      \"name\": \"<course name>\",\n      \"grade\": \"<grade like A, B+, etc>\",\n      \"credits\": \"<credits like 3.00>\",\n      \"term\": \"<term like Fall 2023>\"\n    }}\n  ]\n}}\n\nLook for patterns like:\n- Institution names (often at top: 'University of X', 'College of Y')\n- Degrees (look for 'Bachelor', 'Master', 'Associate', 'Certificate')\n- Fields (look for 'in' before subject: 'Bachelor of Science in Computer Science')\n- GPA values (look for 'GPA:', 'Grade Point Average')\n- Course lines with codes, names, grades, credits\n\nIf this is clearly NOT a transcript, return empty strings and empty courses array.";
+
 
         try
         {
