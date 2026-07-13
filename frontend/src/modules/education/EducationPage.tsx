@@ -374,6 +374,20 @@ export default function EducationPage() {
               </div>
             )}
             
+            {/* Show warning if nothing was extracted */}
+            {!extractedData.institution?.name && !extractedData.degree?.name && (!extractedData.courses || extractedData.courses.length === 0) && (
+              <div className="mb-4 text-sm text-amber-400 bg-amber-500/10 border border-amber-500/20 p-4 rounded-lg">
+                <p className="font-medium">No data could be extracted.</p>
+                <p className="mt-1 text-white/60">This can happen if:</p>
+                <ul className="list-disc pl-4 mt-1 text-white/60 space-y-1">
+                  <li>The file is a scanned/image PDF (not text-based)</li>
+                  <li>The file doesn't contain transcript data</li>
+                  <li>The text is in an unusual format</li>
+                </ul>
+                <p className="mt-2 text-white/60">Try copying the text manually and pasting it in the text box below.</p>
+              </div>
+            )}
+            
             <div className="space-y-4">
               <div>
                 <h3 className="text-sm font-medium text-white/40">Institution</h3>
@@ -398,7 +412,11 @@ export default function EducationPage() {
               </div>
             </div>
             <div className="flex gap-2 mt-6">
-              <Button onClick={saveExtracted} className="bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 border-0">
+              <Button 
+                onClick={saveExtracted} 
+                disabled={!extractedData.institution?.name && !extractedData.degree?.name}
+                className="bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 border-0 disabled:opacity-50"
+              >
                 <Save className="mr-2 h-4 w-4" /> Save to Education
               </Button>
               <Button variant="outline" onClick={() => setShowTranscriptModal(false)} className="border-white/10 hover:bg-white/5">Cancel</Button>

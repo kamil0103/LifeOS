@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using LifeOS.Application.DTOs.Education;
 using LifeOS.Application.Interfaces;
 using LifeOS.Infrastructure.Data;
@@ -57,33 +58,135 @@ public class TranscriptsController : ControllerBase
 
         // Supported types
         var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
-        var allowed = new[] { ".txt", ".pdf", ".doc", ".docx", ".rtf", ".csv", ".tsv", ".json", ".xml", ".html", ".htm" 
-        };
+        var allowed = new[] { ".txt", ".pdf", ".doc", ".docx", ".rtf", ".csv", ".tsv", ".json", ".xml", ".html", ".htm" };
         if (!allowed.Contains(ext))
             return BadRequest(new ProblemDetails { Title = "Unsupported file", Detail = $"Allowed: {string.Join(", ", allowed)}" });
 
         // Read file content
         string text;
-        using (var reader = new StreamReader(file.OpenReadStream(), Encoding.UTF8))
+        if (ext == ".pdf")
         {
-            text = await reader.ReadToEndAsync(ct);
+            text = ExtractTextFromPdf(file);
+        }
+        else
+        {
+            using (var reader = new StreamReader(file.OpenReadStream(), Encoding.UTF8))
+            {
+                text = await reader.ReadToEndAsync(ct);
+            }
         }
 
         if (string.IsNullOrWhiteSpace(text) || text.Length < 50)
+        {
+            if (ext == ".pdf")
+                return BadRequest(new ProblemDetails { 
+                    Title = "PDF parsing failed", 
+                    Detail = "Could not extract readable text from this PDF. The PDF may be scanned (image-based) or password-protected. Try converting it to text first, or paste the text manually." 
+                });
             return BadRequest(new ProblemDetails { Title = "Text too short", Detail = "File contained less than 50 characters of readable text." });
+        }
+
+        _logger.LogInformation("Extracted {Length} characters from uploaded file", text.Length);
 
         var result = await ExtractFromText(text, ct);
-        return result ?? new ExtractedTranscriptDto();
+        
+        if (result == null)
+            return BadRequest(new ProblemDetails { Title = "Extraction failed", Detail = "AI could not parse the transcript. The file may not contain transcript data, or the format is not recognized." });
+
+        // Check if anything was actually extracted
+        if (string.IsNullOrWhiteSpace(result.Institution?.Name) && 
+            string.IsNullOrWhiteSpace(result.Degree?.Name) && 
+            (result.Courses == null || result.Courses.Count == 0))
+        {
+            return Ok(new ExtractedTranscriptDto 
+            { 
+                Institution = new ExtractedInstitutionDto { Name = "" },
+                Degree = new ExtractedDegreeDto { Name = "" },
+                Courses = new List<ExtractedCourseDto>()
+            });
+        }
+
+        return result;
+    }
+
+    private string ExtractTextFromPdf(IFormFile file)
+    {
+        try
+        {
+            using var ms = new MemoryStream();
+            file.CopyTo(ms);
+            var bytes = ms.ToArray();
+            var content = Encoding.UTF8.GetString(bytes);
+            
+            // Try to extract text from PDF content
+            // PDF text objects are between BT and ET markers
+            var textBuilder = new StringBuilder();
+            
+            // Look for text between ( and ) in PDF streams
+            // This regex finds text strings in PDF content
+            var textMatches = Regex.Matches(content, @"\(([^)]{2,200})\)");
+            foreach (Match match in textMatches)
+            {
+                var txt = match.Groups[1].Value;
+                // Filter out common PDF metadata and garbage
+                if (txt.Length > 2 && 
+                    !txt.StartsWith("/") && 
+                    !txt.Contains("obj") &&
+                    !txt.Contains("endobj") &&
+                    !txt.Contains("stream") &&
+                    !Regex.IsMatch(txt, @"^\d+ \d+"))
+                {
+                    textBuilder.Append(txt).Append(' ');
+                }
+            }
+
+            var extracted = textBuilder.ToString();
+            
+            // If regex extraction didn't work well, try another approach
+            if (extracted.Length < 100)
+            {
+                // Try to find text streams in the PDF
+                textBuilder.Clear();
+                var lines = content.Split('\n', '\r');
+                foreach (var line in lines)
+                {
+                    var cleaned = line.Trim();
+                    // Look for lines that contain readable text
+                    if (cleaned.Length > 3 && 
+                        cleaned.Length < 200 &&
+                        Regex.IsMatch(cleaned, @"[a-zA-Z]{3,}") &&
+                        !cleaned.StartsWith("%") &&
+                        !cleaned.StartsWith("<") &&
+                        !cleaned.StartsWith(">") &&
+                        !cleaned.StartsWith("/"))
+                    {
+                        textBuilder.Append(cleaned).Append('\n');
+                    }
+                }
+                extracted = textBuilder.ToString();
+            }
+
+            _logger.LogInformation("PDF extraction: got {Length} characters from {FileName}", extracted.Length, file.FileName);
+            return extracted;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "PDF text extraction failed for {FileName}", file.FileName);
+            return string.Empty;
+        }
     }
 
     private async Task<ExtractedTranscriptDto?> ExtractFromText(string text, CancellationToken ct)
     {
         var systemPrompt = "You are an academic transcript parser. Extract structured data from raw transcript text. Return JSON only.";
-        var userPrompt = $"Extract from this transcript:\n\n{text.Substring(0, Math.Min(8000, text.Length))}\n\nReturn JSON:\n{{\n  \"institution\": {{\n    \"name\": \"<name>\",\n    \"type\": \"<university|community_college|other>\",\n    \"location\": \"<city, state>\"\n  }},\n  \"degree\": {{\n    \"name\": \"<degree name>\",\n    \"field\": \"<field of study>\",\n    \"type\": \"<bachelors|masters|associates|certificate|other>\",\n    \"gpa\": \"<gpa if found>\",\n    \"honors\": \"<honors if found>\"\n  }},\n  \"courses\": [\n    {{\n      \"code\": \"<course code>\",\n      \"name\": \"<course name>\",\n      \"grade\": \"<grade>\",\n      \"credits\": \"<credits>\",\n      \"term\": \"<term>\"\n    }}\n  ]\n}}";
+        var userPrompt = $"Extract from this transcript text:\n\n{text.Substring(0, Math.Min(8000, text.Length))}\n\nReturn ONLY valid JSON with this exact structure:\n{{\n  \"institution\": {{\n    \"name\": \"<institution name or empty string>\",\n    \"type\": \"<university|community_college|other>\",\n    \"location\": \"<city, state or empty>\"\n  }},\n  \"degree\": {{\n    \"name\": \"<degree name or empty string>\",\n    \"field\": \"<field of study or empty>\",\n    \"type\": \"<bachelors|masters|associates|certificate|other>\",\n    \"gpa\": \"<gpa or empty>\",\n    \"honors\": \"<honors or empty>\"\n  }},\n  \"courses\": [\n    {{\n      \"code\": \"<course code or empty>\",\n      \"name\": \"<course name or empty>\",\n      \"grade\": \"<grade or empty>\",\n      \"credits\": \"<credits or empty>\",\n      \"term\": \"<term or empty>\"\n    }}\n  ]\n}}\n\nIf the text is not a transcript or contains no extractable data, return empty strings and an empty courses array.";
 
         try
         {
             var jsonResponse = await _aiProvider.CompleteJsonAsync(systemPrompt, userPrompt, ct);
+            
+            _logger.LogDebug("AI extraction response: {Response}", jsonResponse.Substring(0, Math.Min(200, jsonResponse.Length)));
+            
             var result = JsonSerializer.Deserialize<ExtractedTranscriptDto>(jsonResponse, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
             return result;
         }
