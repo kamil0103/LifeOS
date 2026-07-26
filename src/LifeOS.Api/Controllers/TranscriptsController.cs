@@ -391,9 +391,6 @@ public class TranscriptsController : ControllerBase
         if (request.Institution == null || string.IsNullOrWhiteSpace(request.Institution.Name))
             return BadRequest(new ProblemDetails { Title = "Missing institution", Detail = "Institution name is required." });
 
-        if (request.Degree == null || string.IsNullOrWhiteSpace(request.Degree.Name))
-            return BadRequest(new ProblemDetails { Title = "Missing degree", Detail = "Degree name is required." });
-
         // Create or find institution
         var institution = await _context.Institutions.FirstOrDefaultAsync(i => i.UserId == userId && i.Name == request.Institution.Name, ct);
         if (institution == null)
@@ -409,19 +406,25 @@ public class TranscriptsController : ControllerBase
             await _context.SaveChangesAsync(ct);
         }
 
-        // Create degree
-        var degree = new Domain.Entities.Degree
+        Guid? degreeId = null;
+
+        // Create degree only if provided (community colleges may not have a degree listed)
+        if (request.Degree != null && !string.IsNullOrWhiteSpace(request.Degree.Name))
         {
-            UserId = userId,
-            InstitutionId = institution.Id,
-            DegreeName = request.Degree.Name,
-            Field = request.Degree.Field,
-            DegreeType = request.Degree.Type ?? "other",
-            Gpa = request.Degree.Gpa,
-            Honors = request.Degree.Honors
-        };
-        _context.Degrees.Add(degree);
-        await _context.SaveChangesAsync(ct);
+            var degree = new Domain.Entities.Degree
+            {
+                UserId = userId,
+                InstitutionId = institution.Id,
+                DegreeName = request.Degree.Name,
+                Field = request.Degree.Field,
+                DegreeType = request.Degree.Type ?? "other",
+                Gpa = request.Degree.Gpa,
+                Honors = request.Degree.Honors
+            };
+            _context.Degrees.Add(degree);
+            await _context.SaveChangesAsync(ct);
+            degreeId = degree.Id;
+        }
 
         // Create courses
         if (request.Courses != null)
@@ -434,7 +437,7 @@ public class TranscriptsController : ControllerBase
                 {
                     UserId = userId,
                     InstitutionId = institution.Id,
-                    DegreeId = degree.Id,
+                    DegreeId = degreeId,
                     Code = c.Code,
                     Name = c.Name,
                     Grade = c.Grade,
@@ -446,7 +449,7 @@ public class TranscriptsController : ControllerBase
             await _context.SaveChangesAsync(ct);
         }
 
-        return new { institutionId = institution.Id, degreeId = degree.Id, coursesAdded = request.Courses?.Count ?? 0 };
+        return new { institutionId = institution.Id, degreeId = degreeId, coursesAdded = request.Courses?.Count ?? 0 };
     }
 }
 
