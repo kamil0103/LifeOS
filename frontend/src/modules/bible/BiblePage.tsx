@@ -98,12 +98,26 @@ export default function BiblePage() {
     }
   }
 
+  const [isRefreshingVerse, setIsRefreshingVerse] = useState(false)
+
   const loadDailyVerse = async () => {
     try {
       const { data } = await api.get('/bible/daily')
       setDailyVerse(data)
     } catch (err) {
       // Bible may not be seeded yet
+    }
+  }
+
+  const refreshDailyVerse = async () => {
+    setIsRefreshingVerse(true)
+    try {
+      const { data } = await api.post('/bible/daily/refresh')
+      setDailyVerse(data)
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setIsRefreshingVerse(false)
     }
   }
 
@@ -315,19 +329,27 @@ export default function BiblePage() {
       )}
 
       {activeTab === 'daily' && (
-        <div className="bg-card border rounded-lg p-8 text-center">
-          <Sun className="h-12 w-12 text-primary mx-auto mb-4" />
-          <h2 className="text-lg font-semibold mb-2">Daily Verse</h2>
-          {dailyVerse ? (
-            <div>
-              <p className="text-2xl font-medium italic leading-relaxed mb-4">
-                "{dailyVerse.text}"
-              </p>
-              <p className="text-sm text-muted-foreground">— {dailyVerse.reference}</p>
-            </div>
-          ) : (
-            <p className="text-muted-foreground">No daily verse available. Bible data may not be seeded yet.</p>
-          )}
+        <div className="bg-card border rounded-lg p-8 text-center space-y-6">
+          <Sun className="h-12 w-12 text-primary mx-auto" />
+          <div>
+            <h2 className="text-lg font-semibold mb-2">Daily Verse</h2>
+            {dailyVerse ? (
+              <div className="max-w-xl mx-auto">
+                <p className="text-xl font-medium italic leading-relaxed mb-4">
+                  "{dailyVerse.text}"
+                </p>
+                <p className="text-sm text-muted-foreground">— {dailyVerse.reference}</p>
+              </div>
+            ) : (
+              <p className="text-muted-foreground">No daily verse available. Bible data may not be seeded yet.</p>
+            )}
+          </div>
+          <div>
+            <Button onClick={refreshDailyVerse} disabled={isRefreshingVerse}>
+              {isRefreshingVerse ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sun className="mr-2 h-4 w-4" />}
+              Get Another Verse
+            </Button>
+          </div>
         </div>
       )}
 

@@ -161,6 +161,62 @@ public class SkillsController : ControllerBase
         return NoContent();
     }
 
+    [HttpPost("extract-ai")]
+    public async Task<ActionResult<List<ExtractedSkillDto>>> ExtractSkillsAi([FromServices] IAiProvider aiProvider, CancellationToken ct)
+    {
+        var userId = GetUserId();
+        var courses = await _context.Courses.AsNoTracking().Where(c => c.UserId == userId).Select(c => c.Name).ToListAsync(ct);
+        var experiences = await _context.WorkExperiences.AsNoTracking().Where(e => e.UserId == userId).Select(e => $"{e.Title} at {e.Company}: {e.Bullets}").ToListAsync(ct);
+
+        if (!courses.Any() && !experiences.Any())
+            return Ok(new List<ExtractedSkillDto>());
+
+        var promptText = $"Extract technical and professional skills from the following courses and work experiences.\n\n" +
+            $"Courses:\n{string.Join("\n", courses)}\n\n" +
+            $"Work Experience:\n{string.Join("\n", experiences)}\n\n" +
+            $"Return ONLY a JSON array of objects with structure: [{{\"name\": \"<skill name>\", \"category\": \"<Programming Language|Framework|Tool|Concept|Database|Cloud|DevOps|Other>\", \"proficiency\": \"Intermediate\"}}].";
+
+        try
+        {
+            var json = await aiProvider.CompleteJsonAsync("You are an expert technical skills extractor.", promptText, ct);
+            var cleaned = json.Trim();
+            if (cleaned.StartsWith("```json")) cleaned = cleaned[7..];
+            if (cleaned.StartsWith("```")) cleaned = cleaned[3..];
+            if (cleaned.EndsWith("```")) cleaned = cleaned[..^3];
+            cleaned = cleaned.Trim();
+
+            var list = JsonSerializer.Deserialize<List<ExtractedSkillDto>>(cleaned, new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? [];
+            return Ok(list);
+        }
+        catch (Exception ex)
+        {
+            return BadRequest(new ProblemDetails { Title = "AI Extraction Failed", Detail = ex.Message });
+        }
+    }
+
+    [HttpPost("save-extracted")]
+    public async Task<IActionResult> SaveExtractedSkills([FromBody] List<ExtractedSkillDto> skills, CancellationToken ct)
+    {
+        var userId = GetUserId();
+        foreach (var s in skills)
+        {
+            if (string.IsNullOrWhiteSpace(s.Name)) continue;
+            var exists = await _context.Skills.AnyAsync(x => x.UserId == userId && x.Name.ToLower() == s.Name.ToLower(), ct);
+            if (!exists)
+            {
+                _context.Skills.Add(new Skill
+                {
+                    UserId = userId,
+                    Name = s.Name,
+                    Category = s.Category ?? "Other",
+                    Proficiency = s.Proficiency ?? "Intermediate",
+                    Source = "AI Extracted"
+                });
+            }
+        }
+        await _context.SaveChangesAsync(ct);
+        return NoContent();
+    }
     private static SkillDto MapSkill(Skill s) => new()
     {
         Id = s.Id,
@@ -181,4 +237,11 @@ public class SkillsController : ControllerBase
         Url = c.Url,
         Description = c.Description
     };
+}
+
+public class ExtractedSkillDto
+{
+    public string Name { get; set; } = string.Empty;
+    public string Category { get; set; } = string.Empty;
+    public string Proficiency { get; set; } = string.Empty;
 }

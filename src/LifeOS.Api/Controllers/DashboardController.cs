@@ -24,12 +24,29 @@ public class DashboardController : ControllerBase
         return Guid.Parse(sub!);
     }
 
+    private async Task<DateTime> GetUserLocalTodayAsync(Guid userId, CancellationToken ct)
+    {
+        var profile = await _context.UserProfiles.AsNoTracking().FirstOrDefaultAsync(p => p.UserId == userId, ct);
+        var tzId = profile?.TimeZone ?? "America/Los_Angeles";
+        TimeZoneInfo tz;
+        try
+        {
+            tz = TimeZoneInfo.FindSystemTimeZoneById(tzId);
+        }
+        catch
+        {
+            tz = TimeZoneInfo.FindSystemTimeZoneById("America/Los_Angeles");
+        }
+        var localNow = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, tz);
+        return localNow.Date;
+    }
+
     [HttpGet("today")]
     public async Task<ActionResult<TodayDashboardDto>> GetToday(CancellationToken ct)
     {
         var userId = GetUserId();
-        var todayUtc = DateTimeOffset.UtcNow;
-        var todayStart = new DateTimeOffset(todayUtc.Year, todayUtc.Month, todayUtc.Day, 0, 0, 0, TimeSpan.Zero);
+        var localToday = await GetUserLocalTodayAsync(userId, ct);
+        var todayStart = new DateTimeOffset(localToday, TimeSpan.Zero);
         var todayEnd = todayStart.AddDays(1);
 
         // Habits not completed today
@@ -122,11 +139,11 @@ public class DashboardController : ControllerBase
     public async Task<ActionResult<UserStatsDto>> GetStats(CancellationToken ct)
     {
         var userId = GetUserId();
-        var today = DateTimeOffset.UtcNow.Date;
+        var localToday = await GetUserLocalTodayAsync(userId, ct);
 
         var totalHabits = await _context.Habits.CountAsync(h => h.UserId == userId && h.IsActive, ct);
         var completedToday = await _context.HabitCompletions
-            .CountAsync(c => c.Habit.UserId == userId && c.CompletedAt.Date == today, ct);
+            .CountAsync(c => c.Habit.UserId == userId && c.CompletedAt >= new DateTimeOffset(localToday, TimeSpan.Zero) && c.CompletedAt < new DateTimeOffset(localToday.AddDays(1), TimeSpan.Zero), ct);
         var totalXp = await _context.XpTransactions
             .Where(x => x.UserId == userId)
             .SumAsync(x => x.Amount, ct);

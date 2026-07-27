@@ -12,4 +12,5 @@ public class ProfileDto
     public string? Summary { get; set; }
     public string? TargetRoles { get; set; }
     public string? AvatarUrl { get; set; }
+    public string? TimeZone { get; set; } = "America/Los_Angeles";
 }

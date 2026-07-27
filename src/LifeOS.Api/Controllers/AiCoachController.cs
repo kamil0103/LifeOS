@@ -31,11 +31,29 @@ public class AiCoachController : ControllerBase
         return Guid.Parse(sub!);
     }
 
+    private async Task<DateTime> GetUserLocalTodayAsync(Guid userId, CancellationToken ct)
+    {
+        var profile = await _context.UserProfiles.AsNoTracking().FirstOrDefaultAsync(p => p.UserId == userId, ct);
+        var tzId = profile?.TimeZone ?? "America/Los_Angeles";
+        TimeZoneInfo tz;
+        try
+        {
+            tz = TimeZoneInfo.FindSystemTimeZoneById(tzId);
+        }
+        catch
+        {
+            tz = TimeZoneInfo.FindSystemTimeZoneById("America/Los_Angeles");
+        }
+        var localNow = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, tz);
+        return localNow.Date;
+    }
+
     [HttpPost("generate-mission")]
     public async Task<ActionResult<DailyMissionDto>> GenerateMission(CancellationToken ct)
     {
         var userId = GetUserId();
-        var today = new DateTimeOffset(DateTimeOffset.UtcNow.Date, TimeSpan.Zero);
+        var localTodayDate = await GetUserLocalTodayAsync(userId, ct);
+        var today = new DateTimeOffset(localTodayDate, TimeSpan.Zero);
 
         // Check if already generated today
         var existing = await _context.DailyMissions
@@ -173,7 +191,8 @@ public class AiCoachController : ControllerBase
     public async Task<ActionResult<DailyMissionDto>> GetTodayMission(CancellationToken ct)
     {
         var userId = GetUserId();
-        var today = new DateTimeOffset(DateTimeOffset.UtcNow.Date);
+        var localTodayDate = await GetUserLocalTodayAsync(userId, ct);
+        var today = new DateTimeOffset(localTodayDate, TimeSpan.Zero);
 
         var mission = await _context.DailyMissions
             .AsNoTracking()

@@ -13,6 +13,7 @@ interface ProfileData {
   summary: string
   targetRoles: string
   avatarUrl: string
+  timeZone: string
 }
 
 export default function ProfilePage() {
@@ -26,6 +27,7 @@ export default function ProfilePage() {
     summary: '',
     targetRoles: '',
     avatarUrl: '',
+    timeZone: 'America/Los_Angeles',
   })
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
@@ -150,6 +152,21 @@ export default function ProfilePage() {
               className="w-full px-3 py-2 rounded-md border bg-background text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               placeholder="https://johndoe.dev"
             />
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Time Zone</label>
+            <select
+              value={profile.timeZone || 'America/Los_Angeles'}
+              onChange={(e) => handleChange('timeZone', e.target.value)}
+              className="w-full px-3 py-2 rounded-md border bg-background text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              <option value="America/Los_Angeles">America/Los_Angeles (Pacific Time)</option>
+              <option value="America/Denver">America/Denver (Mountain Time)</option>
+              <option value="America/Chicago">America/Chicago (Central Time)</option>
+              <option value="America/New_York">America/New_York (Eastern Time)</option>
+              <option value="UTC">UTC</option>
+            </select>
           </div>
 
           <div className="space-y-2">

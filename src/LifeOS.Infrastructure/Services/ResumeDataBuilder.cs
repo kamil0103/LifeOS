@@ -27,6 +27,11 @@ public class ResumeDataBuilder : IResumeDataBuilder
             .Where(d => d.UserId == userId)
             .ToListAsync(ct);
 
+        var institutionsWithoutDegrees = await _context.Institutions
+            .AsNoTracking()
+            .Where(i => i.UserId == userId && !_context.Degrees.Any(d => d.InstitutionId == i.Id))
+            .ToListAsync(ct);
+
         var courses = await _context.Courses
             .AsNoTracking()
             .Where(c => c.UserId == userId && c.IsMajorRelated)
@@ -94,7 +99,19 @@ public class ResumeDataBuilder : IResumeDataBuilder
                 IsCurrent = d.IsCurrent,
                 StartDate = d.StartDate,
                 EndDate = d.EndDate
-            }).ToList(),
+            }).Concat(institutionsWithoutDegrees.Select(i => new ResumeEducationDto
+            {
+                Id = i.Id,
+                School = i.Name,
+                Degree = "Coursework / Transfer Credits",
+                Field = "",
+                GraduationDate = "",
+                Gpa = "",
+                Honors = "",
+                IsCurrent = false,
+                StartDate = "",
+                EndDate = ""
+            })).ToList(),
             Experience = workExp.Select(e => new ResumeExperienceDto
             {
                 Id = e.Id,

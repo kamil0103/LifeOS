@@ -124,23 +124,31 @@ export default function ResumeEditorPage() {
     try {
       const { data } = await api.get('/resume-versions')
       setVersions(data)
-      if (data.length > 0) {
-        const latest = await api.get(`/resume-versions/${data[0].id}`)
-        setResumeData(latest.data.data)
-      } else {
+      // Always fetch latest live resume data by default so transcript/job/skill additions reflect immediately
+      const fresh = await api.get('/documents/resume-data')
+      setResumeData(fresh.data)
+    } catch (err: any) {
+      try {
         const fresh = await api.get('/documents/resume-data')
         setResumeData(fresh.data)
-      }
-    } catch (err: any) {
-      if (err.response?.status === 404) {
-        try {
-          const fresh = await api.get('/documents/resume-data')
-          setResumeData(fresh.data)
-        } catch (e) {
-          console.error(e)
-        }
+      } catch (e) {
+        console.error(e)
       }
       console.error(err)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const syncLiveData = async () => {
+    setIsLoading(true)
+    try {
+      const fresh = await api.get('/documents/resume-data')
+      setResumeData(fresh.data)
+      alert('Resynced with latest live transcript, experience, and skills data!')
+    } catch (err) {
+      console.error(err)
+      alert('Failed to sync live data')
     } finally {
       setIsLoading(false)
     }
@@ -256,6 +264,9 @@ export default function ResumeEditorPage() {
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold">Resume Editor</h1>
         <div className="flex gap-2">
+          <Button variant="outline" onClick={syncLiveData}>
+            Sync Live Data
+          </Button>
           <Button variant="outline" onClick={() => setActiveTab(activeTab === 'edit' ? 'versions' : 'edit')}>
             {activeTab === 'edit' ? 'Versions' : 'Edit'}
           </Button>

@@ -60,7 +60,8 @@ public class ProfileController : ControllerBase
                 PortfolioUrl = dto.PortfolioUrl,
                 Summary = dto.Summary,
                 TargetRoles = dto.TargetRoles,
-                AvatarUrl = dto.AvatarUrl
+                AvatarUrl = dto.AvatarUrl,
+                TimeZone = dto.TimeZone ?? "America/Los_Angeles"
             };
             _context.UserProfiles.Add(profile);
         }
@@ -75,6 +76,7 @@ public class ProfileController : ControllerBase
             profile.Summary = dto.Summary;
             profile.TargetRoles = dto.TargetRoles;
             profile.AvatarUrl = dto.AvatarUrl;
+            profile.TimeZone = dto.TimeZone ?? profile.TimeZone ?? "America/Los_Angeles";
         }
 
         await _context.SaveChangesAsync(ct);
@@ -92,6 +94,7 @@ public class ProfileController : ControllerBase
         PortfolioUrl = p.PortfolioUrl,
         Summary = p.Summary,
         TargetRoles = p.TargetRoles,
-        AvatarUrl = p.AvatarUrl
+        AvatarUrl = p.AvatarUrl,
+        TimeZone = p.TimeZone ?? "America/Los_Angeles"
     };
 }

@@ -125,21 +125,38 @@ public class BibleController : ControllerBase
         return results;
     }
 
+    private async Task<DateTime> GetUserLocalTodayAsync(Guid userId, CancellationToken ct)
+    {
+        var profile = await _context.UserProfiles.AsNoTracking().FirstOrDefaultAsync(p => p.UserId == userId, ct);
+        var tzId = profile?.TimeZone ?? "America/Los_Angeles";
+        TimeZoneInfo tz;
+        try
+        {
+            tz = TimeZoneInfo.FindSystemTimeZoneById(tzId);
+        }
+        catch
+        {
+            tz = TimeZoneInfo.FindSystemTimeZoneById("America/Los_Angeles");
+        }
+        var localNow = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, tz);
+        return localNow.Date;
+    }
+
     // ==================== DAILY VERSE ====================
 
     [HttpGet("daily")]
     public async Task<ActionResult<DailyVerseDto>> GetDailyVerse(CancellationToken ct)
     {
         var userId = GetUserId();
-        var today = DateTimeOffset.UtcNow.Date;
-        var dayOfYear = today.DayOfYear;
+        var localToday = await GetUserLocalTodayAsync(userId, ct);
+        var dayOfYear = localToday.DayOfYear;
 
-        // Deterministic daily verse based on day of year
+        // Deterministic daily verse based on day of year + user id hash for uniqueness per user
         var count = await _context.BibleVerses.CountAsync(ct);
         if (count == 0)
             return NotFound(new ProblemDetails { Title = "No verses", Detail = "Bible data has not been seeded yet." });
 
-        var index = dayOfYear % count;
+        var index = (dayOfYear + Math.Abs(userId.GetHashCode())) % count;
         var verse = await _context.BibleVerses
             .AsNoTracking()
             .Include(v => v.Book)
@@ -155,6 +172,32 @@ public class BibleController : ControllerBase
 
         if (verse == null)
             return NotFound();
+        return verse;
+    }
+
+    [HttpPost("daily/refresh")]
+    public async Task<ActionResult<DailyVerseDto>> RefreshDailyVerse(CancellationToken ct)
+    {
+        var count = await _context.BibleVerses.CountAsync(ct);
+        if (count == 0)
+            return NotFound();
+
+        var random = new Random();
+        var index = random.Next(0, count);
+        var verse = await _context.BibleVerses
+            .AsNoTracking()
+            .Include(v => v.Book)
+            .Skip(index)
+            .Take(1)
+            .Select(v => new DailyVerseDto
+            {
+                Id = v.Id,
+                Reference = $"{v.Book.Name} {v.Chapter}:{v.VerseNumber}",
+                Text = v.Text
+            })
+            .FirstOrDefaultAsync(ct);
+
+        if (verse == null) return NotFound();
         return verse;
     }
 

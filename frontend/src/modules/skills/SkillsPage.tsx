@@ -36,7 +36,36 @@ export default function SkillsPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<'skills' | 'certificates'>('skills')
 
-  const [showAddSkill, setShowAddSkill] = useState(false)
+  const [isExtractingAi, setIsExtractingAi] = useState(false)
+  const [extractedModalSkills, setExtractedModalSkills] = useState<Array<{ name: string; category: string; proficiency: string; selected: boolean }>>([])
+  const [showExtractModal, setShowExtractModal] = useState(false)
+
+  const extractSkillsAi = async () => {
+    setIsExtractingAi(true)
+    try {
+      const { data } = await api.post('/skills/extract-ai')
+      setExtractedModalSkills(data.map((s: any) => ({ ...s, selected: true })))
+      setShowExtractModal(true)
+    } catch (err) {
+      console.error(err)
+      alert('AI skill extraction failed')
+    } finally {
+      setIsExtractingAi(false)
+    }
+  }
+
+  const saveSelectedExtractedSkills = async (auto: boolean = false) => {
+    try {
+      const skillsToSave = auto ? extractedModalSkills : extractedModalSkills.filter(s => s.selected)
+      await api.post('/skills/save-extracted', skillsToSave)
+      setShowExtractModal(false)
+      loadData()
+      alert('Skills saved successfully!')
+    } catch (err) {
+      console.error(err)
+      alert('Failed to save extracted skills')
+    }
+  }
   const [newSkill, setNewSkill] = useState({ name: '', category: 'Programming Language', proficiency: 'Beginner', source: '' })
 
   const [showAddCert, setShowAddCert] = useState(false)
@@ -124,7 +153,11 @@ export default function SkillsPage() {
 
       {activeTab === 'skills' && (
         <div className="space-y-6">
-          <div className="flex justify-end">
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={extractSkillsAi} disabled={isExtractingAi}>
+              {isExtractingAi ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}
+              AI Extract Skills
+            </Button>
             <Button onClick={() => setShowAddSkill(true)}>
               <Plus className="mr-2 h-4 w-4" />
               Add Skill
@@ -234,6 +267,53 @@ export default function SkillsPage() {
           ))}
         </div>
       )}
-    </div>
-  )
-}
+      {/* AI Extraction Modal */}
+      {showExtractModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-card border rounded-lg p-6 w-[600px] max-h-[80vh] overflow-y-auto">
+            <h3 className="text-lg font-semibold mb-2">Review Extracted Skills</h3>
+            <p className="text-sm text-muted-foreground mb-4">Select the skills you want to add to your profile, or edit them.</p>
+            <div className="space-y-2 mb-6 max-h-[50vh] overflow-y-auto">
+              {extractedModalSkills.map((s, i) => (
+                <div key={i} className="flex items-center gap-3 bg-secondary/50 p-3 rounded-md">
+                  <input
+                    type="checkbox"
+                    checked={s.selected}
+                    onChange={e => {
+                      const next = [...extractedModalSkills]
+                      next[i].selected = e.target.checked
+                      setExtractedModalSkills(next)
+                    }}
+                    className="h-4 w-4"
+                  />
+                  <input
+                    type="text"
+                    value={s.name}
+                    onChange={e => {
+                      const next = [...extractedModalSkills]
+                      next[i].name = e.target.value
+                      setExtractedModalSkills(next)
+                    }}
+                    className="flex-1 px-2 py-1 border rounded bg-background text-sm font-medium"
+                  />
+                  <select
+                    value={s.category}
+                    onChange={e => {
+                      const next = [...extractedModalSkills]
+                      next[i].category = e.target.value
+                      setExtractedModalSkills(next)
+                    }}
+                    className="px-2 py-1 border rounded bg-background text-sm"
+                  >
+                    {categories.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-2 justify-end">
+              <Button variant="outline" onClick={() => setShowExtractModal(false)}>Cancel</Button>
+              <Button onClick={() => saveSelectedExtractedSkills(false)}>Save Selected</Button>
+            </div>
+          </div>
+        </div>
+      )}

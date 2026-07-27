@@ -271,15 +271,15 @@ public class QuestPdfResumeGenerator : IResumeGenerator
             {
                 col.Item().Text(text =>
                 {
-                    text.Span(edu.Degree).Bold();
+                    text.Span(edu.Degree ?? "Education").Bold();
                     if (!string.IsNullOrWhiteSpace(edu.Field))
                         text.Span($" — {edu.Field}");
                 });
-                col.Item().Text(edu.School).Italic().FontColor(DarkGray);
+                col.Item().Text(edu.School ?? "").Italic().FontColor(DarkGray);
                 if (!string.IsNullOrWhiteSpace(edu.StartDate) || !string.IsNullOrWhiteSpace(edu.EndDate))
                 {
                     var end = edu.IsCurrent ? "Present" : edu.EndDate;
-                    col.Item().Text($"{edu.StartDate} — {end}").FontSize(9).FontColor(DarkGray);
+                    col.Item().Text($"{edu.StartDate ?? ""} — {end ?? ""}").FontSize(9).FontColor(DarkGray);
                 }
                 if (!string.IsNullOrWhiteSpace(edu.Gpa) || !string.IsNullOrWhiteSpace(edu.Honors))
                 {
@@ -302,13 +302,13 @@ public class QuestPdfResumeGenerator : IResumeGenerator
             {
                 col.Item().Text(text =>
                 {
-                    text.Span(exp.Title).Bold();
-                    text.Span($" — {exp.Company}");
+                    text.Span(exp.Title ?? "Role").Bold();
+                    text.Span($" — {exp.Company ?? ""}");
                     if (!string.IsNullOrWhiteSpace(exp.Location))
                         text.Span($" ({exp.Location})").FontColor(DarkGray);
                 });
                 var end = exp.IsCurrent ? "Present" : exp.EndDate;
-                col.Item().Text($"{exp.StartDate} — {end}").FontSize(9).FontColor(DarkGray);
+                col.Item().Text($"{exp.StartDate ?? ""} — {end ?? ""}").FontSize(9).FontColor(DarkGray);
                 foreach (var bullet in exp.BulletList)
                 {
                     col.Item().PaddingLeft(12).Text($"• {bullet}").FontSize(9);
