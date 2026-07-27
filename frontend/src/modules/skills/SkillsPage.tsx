@@ -66,6 +66,7 @@ export default function SkillsPage() {
       alert('Failed to save extracted skills')
     }
   }
+  const [showAddSkill, setShowAddSkill] = useState(false)
   const [newSkill, setNewSkill] = useState({ name: '', category: 'Programming Language', proficiency: 'Beginner', source: '' })
 
   const [showAddCert, setShowAddCert] = useState(false)
