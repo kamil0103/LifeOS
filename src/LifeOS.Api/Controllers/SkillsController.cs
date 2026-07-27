@@ -1,6 +1,8 @@
 using LifeOS.Application.DTOs.Skills;
+using LifeOS.Application.Interfaces;
 using LifeOS.Domain.Entities;
 using LifeOS.Infrastructure.Data;
+using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
