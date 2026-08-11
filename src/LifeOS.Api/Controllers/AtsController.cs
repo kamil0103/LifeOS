@@ -66,15 +66,22 @@ public class AtsController : ControllerBase
 
         var resumeJson = JsonSerializer.Serialize(request.ResumeData, new JsonSerializerOptions { WriteIndented = false });
 
-        var systemPrompt = "You are an expert resume writer following Harvard Career Services guidelines. You rewrite resumes to best fit a specific job using ONLY the candidate's real data — never invent experience, skills, degrees, or achievements.";
+        var systemPrompt = "You are an expert resume writer following Harvard Career Services guidelines. You create tightly TARGETED resumes: you aggressively filter out anything irrelevant to the specific job, and rewrite what remains using ONLY the candidate's real data — never invent experience, skills, degrees, or achievements.";
 
-        var userPrompt = $@"Rewrite this resume to best fit the job below. Rules (Harvard Career Services):
-- Begin every bullet with a strong action verb (e.g., Developed, Implemented, Analyzed, Engineered, Designed, Led, Optimized, Streamlined).
-- Quantify results where possible. Use concise phrases, NOT full sentences. No personal pronouns (no I, we, my).
-- Reorder and rewrite experience bullets to emphasize skills the job values most.
-- Reorder skills so the most job-relevant appear first in each category.
-- Keep only relevant coursework. Drop irrelevant entries.
-- Do NOT fabricate: no new employers, titles, skills, degrees, certifications, or metrics that aren't supported by the original data.
+        var userPrompt = $@"Tailor this resume to the job below. Your #1 job is FILTERING — a short targeted resume beats a long unfocused one.
+
+FILTERING RULES (most important):
+- EXPERIENCE: Remove any role with no transferable relevance to this job (e.g., remove food delivery, retail, or unrelated labor roles from a software engineering resume). If a role has transferable skills (teamwork, deadlines, customer service, reliability), keep it but reframe bullets toward what this job values. If ALL experience is unrelated, keep only the single strongest entry.
+- PROJECTS: Keep only projects that demonstrate skills this job asks for. Remove the rest.
+- SKILLS: Keep only skills a recruiter for THIS role would care about; most job-relevant first in each category. Remove clearly unrelated skills (e.g., remove cooking or driving skills from a programming resume).
+- COURSEWORK: Keep only courses relevant to this job.
+- EDUCATION: Keep all degrees, but drop honors/coursework that don't serve this application.
+
+WRITING RULES (Harvard Career Services):
+- Begin every bullet with a strong action verb (Developed, Implemented, Analyzed, Engineered, Designed, Led, Optimized, Streamlined).
+- Quantify results where the data supports it. Concise phrases, NOT full sentences. No personal pronouns (no I, we, my).
+- Rewrite the summary to target this specific role.
+- Do NOT fabricate: no new employers, titles, skills, degrees, certifications, or metrics not supported by the original data.
 - Keep the same JSON structure exactly. Keep entity IDs unchanged.
 
 JOB POSTING:
@@ -87,11 +94,11 @@ CURRENT RESUME JSON:
 
 Return ONLY valid JSON with this exact structure:
 {{
-  ""tailoredResume"": ""<the full resume JSON, same structure as the input>"",
-  ""changeSummary"": [""<what you rewrote/reordered/removed and why>""],
+  ""tailoredResume"": ""<the full FILTERED resume JSON, same structure as the input>"",
+  ""changeSummary"": [""<each entry you REMOVED and why, then each thing you rewrote/reordered>""],
   ""recommendations"": [{{ ""type"": ""skill"", ""text"": ""<suggestion for something the job wants that the candidate lacks data for>"", ""target"": ""<optional category>"" }}]
 }}
-For recommendations, type may be skill, keyword, or note.";
+For recommendations, type may be skill, keyword, or note. The changeSummary MUST list every removed experience, project, skill, and course so the user can see exactly what was filtered out.";
 
         try
         {
