@@ -1,10 +1,12 @@
 import { useState, useEffect, useCallback } from 'react'
 import api from '@/lib/api'
 import { Button } from '@/components/ui/button'
-import { Loader2, Plus, Trash2, Upload, Sparkles, FileText, X, Save } from 'lucide-react'
+import { Loader2, Plus, Trash2, Upload, Sparkles, FileText, X, Save, Pencil } from 'lucide-react'
 
 interface Course {
   id: string
+  degreeId?: string
+  institutionId?: string
   code?: string
   name: string
   grade?: string
@@ -50,6 +52,11 @@ export default function EducationPage() {
   const [uploadProgress, setUploadProgress] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
 
+  // Edit modal state
+  const [editInst, setEditInst] = useState<Institution | null>(null)
+  const [editDegree, setEditDegree] = useState<Degree | null>(null)
+  const [editCourse, setEditCourse] = useState<(Course & { degreeId?: string; institutionId?: string }) | null>(null)
+
   useEffect(() => {
     loadInstitutions()
   }, [])
@@ -79,6 +86,85 @@ export default function EducationPage() {
     if (!confirm('Delete this institution and all associated degrees/courses?')) return
     try {
       await api.delete(`/education/institutions/${id}`)
+      loadInstitutions()
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
+  const saveInstitution = async () => {
+    if (!editInst || !editInst.name) return
+    try {
+      await api.put(`/education/institutions/${editInst.id}`, {
+        name: editInst.name,
+        institutionType: editInst.institutionType,
+        location: editInst.location,
+      })
+      setEditInst(null)
+      loadInstitutions()
+    } catch (err) {
+      console.error(err)
+      alert('Failed to update institution')
+    }
+  }
+
+  const saveDegree = async () => {
+    if (!editDegree || !editDegree.degreeName) return
+    try {
+      await api.put(`/education/degrees/${editDegree.id}`, {
+        institutionId: editDegree.institutionId,
+        degreeName: editDegree.degreeName,
+        degreeType: editDegree.degreeType,
+        field: editDegree.field,
+        startDate: editDegree.startDate,
+        endDate: editDegree.endDate,
+        gpa: editDegree.gpa,
+        honors: editDegree.honors,
+        isCurrent: editDegree.isCurrent,
+      })
+      setEditDegree(null)
+      loadInstitutions()
+    } catch (err) {
+      console.error(err)
+      alert('Failed to update degree')
+    }
+  }
+
+  const saveCourse = async () => {
+    if (!editCourse || !editCourse.name) return
+    try {
+      await api.put(`/education/courses/${editCourse.id}`, {
+        degreeId: editCourse.degreeId ?? null,
+        institutionId: editCourse.institutionId ?? null,
+        code: editCourse.code,
+        name: editCourse.name,
+        grade: editCourse.grade,
+        credits: editCourse.credits,
+        term: editCourse.term,
+        isMajorRelated: editCourse.isMajorRelated,
+      })
+      setEditCourse(null)
+      loadInstitutions()
+    } catch (err) {
+      console.error(err)
+      alert('Failed to update course')
+    }
+  }
+
+  const deleteCourse = async (id: string) => {
+    if (!confirm('Delete this course?')) return
+    try {
+      await api.delete(`/education/courses/${id}`)
+      loadInstitutions()
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
+  const deleteDegree = async (id: string) => {
+    if (!confirm('Delete this degree? Courses under it will become unassigned.')) return
+    try {
+      await api.delete(`/education/degrees/${id}`)
       loadInstitutions()
     } catch (err) {
       console.error(err)
@@ -311,9 +397,14 @@ export default function EducationPage() {
                   {inst.institutionType} {inst.location && `· ${inst.location}`}
                 </p>
               </div>
-              <Button variant="ghost" size="sm" onClick={() => deleteInstitution(inst.id)} className="text-red-400 hover:text-red-300 hover:bg-red-500/5">
-                <Trash2 className="h-4 w-4" />
-              </Button>
+              <div className="flex gap-1">
+                <Button variant="ghost" size="sm" onClick={() => setEditInst(inst)} className="text-white/40 hover:text-white hover:bg-white/5">
+                  <Pencil className="h-4 w-4" />
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => deleteInstitution(inst.id)} className="text-red-400 hover:text-red-300 hover:bg-red-500/5">
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
 
             {inst.degrees.length > 0 && (
@@ -323,7 +414,15 @@ export default function EducationPage() {
                   <div key={deg.id} className="pl-4 border-l-2 border-blue-500/20 py-2">
                     <div className="flex items-center justify-between">
                       <p className="font-medium text-white">{deg.degreeName}</p>
-                      <span className="text-xs bg-white/5 px-2 py-1 rounded text-white/60">{deg.degreeType}</span>
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs bg-white/5 px-2 py-1 rounded text-white/60">{deg.degreeType}</span>
+                        <button onClick={() => setEditDegree(deg)} className="text-white/30 hover:text-white p-1">
+                          <Pencil className="h-3 w-3" />
+                        </button>
+                        <button onClick={() => deleteDegree(deg.id)} className="text-red-400/60 hover:text-red-400 p-1">
+                          <Trash2 className="h-3 w-3" />
+                        </button>
+                      </div>
                     </div>
                     {deg.field && <p className="text-sm text-white/40">{deg.field}</p>}
                     <p className="text-sm text-white/30">
@@ -333,8 +432,14 @@ export default function EducationPage() {
                     {deg.courses.length > 0 && (
                       <div className="mt-2 flex flex-wrap gap-2">
                         {deg.courses.map((c) => (
-                          <span key={c.id} className="text-xs bg-white/5 px-2 py-1 rounded text-white/50">
+                          <span key={c.id} className="text-xs bg-white/5 px-2 py-1 rounded text-white/50 inline-flex items-center gap-1 group">
                             {c.code} {c.name}
+                            <button onClick={() => setEditCourse({ ...c, degreeId: c.degreeId ?? deg.id, institutionId: c.institutionId ?? inst.id })} className="text-white/30 hover:text-white opacity-0 group-hover:opacity-100 transition-opacity">
+                              <Pencil className="h-3 w-3" />
+                            </button>
+                            <button onClick={() => deleteCourse(c.id)} className="text-red-400/50 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <X className="h-3 w-3" />
+                            </button>
                           </span>
                         ))}
                       </div>
@@ -351,8 +456,14 @@ export default function EducationPage() {
                 </h4>
                 <div className="flex flex-wrap gap-2">
                   {inst.unassignedCourses.map((c) => (
-                    <span key={c.id} className="text-xs bg-white/5 px-2 py-1 rounded text-white/50">
+                    <span key={c.id} className="text-xs bg-white/5 px-2 py-1 rounded text-white/50 inline-flex items-center gap-1 group">
                       {c.code} {c.name}
+                      <button onClick={() => setEditCourse({ ...c, institutionId: c.institutionId ?? inst.id })} className="text-white/30 hover:text-white opacity-0 group-hover:opacity-100 transition-opacity">
+                        <Pencil className="h-3 w-3" />
+                      </button>
+                      <button onClick={() => deleteCourse(c.id)} className="text-red-400/50 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <X className="h-3 w-3" />
+                      </button>
                     </span>
                   ))}
                 </div>
@@ -420,6 +531,96 @@ export default function EducationPage() {
                 <Save className="mr-2 h-4 w-4" /> Save to Education
               </Button>
               <Button variant="outline" onClick={() => setShowTranscriptModal(false)} className="border-white/10 hover:bg-white/5">Cancel</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Institution Modal */}
+      {editInst && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => setEditInst(null)}>
+          <div className="glass-card p-6 w-[440px]" onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold text-white mb-4">Edit Institution</h3>
+            <div className="space-y-3">
+              <input type="text" placeholder="Institution Name" value={editInst.name} onChange={e => setEditInst({ ...editInst, name: e.target.value })} className="w-full px-4 py-2.5 rounded-lg border border-white/10 bg-white/5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40" />
+              <select value={editInst.institutionType} onChange={e => setEditInst({ ...editInst, institutionType: e.target.value })} className="w-full px-4 py-2.5 rounded-lg border border-white/10 bg-white/5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40">
+                <option value="university">University</option>
+                <option value="community_college">Community College</option>
+                <option value="high_school">High School</option>
+                <option value="certificate_organization">Certificate Organization</option>
+                <option value="other">Other</option>
+              </select>
+              <input type="text" placeholder="Location" value={editInst.location ?? ''} onChange={e => setEditInst({ ...editInst, location: e.target.value })} className="w-full px-4 py-2.5 rounded-lg border border-white/10 bg-white/5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40" />
+            </div>
+            <div className="flex gap-2 mt-5 justify-end">
+              <Button variant="outline" onClick={() => setEditInst(null)} className="border-white/10 hover:bg-white/5">Cancel</Button>
+              <Button onClick={saveInstitution} className="bg-gradient-to-r from-blue-600 to-blue-500 border-0">Save</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Degree Modal */}
+      {editDegree && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => setEditDegree(null)}>
+          <div className="glass-card p-6 w-[480px] max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold text-white mb-4">Edit Degree / Major</h3>
+            <div className="space-y-3">
+              <input type="text" placeholder="Degree Name *" value={editDegree.degreeName} onChange={e => setEditDegree({ ...editDegree, degreeName: e.target.value })} className="w-full px-4 py-2.5 rounded-lg border border-white/10 bg-white/5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40" />
+              <div className="grid grid-cols-2 gap-3">
+                <select value={editDegree.degreeType} onChange={e => setEditDegree({ ...editDegree, degreeType: e.target.value })} className="px-4 py-2.5 rounded-lg border border-white/10 bg-white/5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40">
+                  <option value="bachelors">Bachelors</option>
+                  <option value="masters">Masters</option>
+                  <option value="associates">Associates</option>
+                  <option value="certificate">Certificate</option>
+                  <option value="other">Other</option>
+                </select>
+                <input type="text" placeholder="Field (e.g. Computer Science)" value={editDegree.field ?? ''} onChange={e => setEditDegree({ ...editDegree, field: e.target.value })} className="px-4 py-2.5 rounded-lg border border-white/10 bg-white/5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <input type="text" placeholder="Start Date" value={editDegree.startDate ?? ''} onChange={e => setEditDegree({ ...editDegree, startDate: e.target.value })} className="px-4 py-2.5 rounded-lg border border-white/10 bg-white/5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40" />
+                <input type="text" placeholder="End Date" value={editDegree.endDate ?? ''} onChange={e => setEditDegree({ ...editDegree, endDate: e.target.value })} className="px-4 py-2.5 rounded-lg border border-white/10 bg-white/5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40" />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <input type="text" placeholder="GPA" value={editDegree.gpa ?? ''} onChange={e => setEditDegree({ ...editDegree, gpa: e.target.value })} className="px-4 py-2.5 rounded-lg border border-white/10 bg-white/5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40" />
+                <input type="text" placeholder="Honors" value={editDegree.honors ?? ''} onChange={e => setEditDegree({ ...editDegree, honors: e.target.value })} className="px-4 py-2.5 rounded-lg border border-white/10 bg-white/5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40" />
+              </div>
+              <label className="flex items-center gap-2 text-sm text-white/60">
+                <input type="checkbox" checked={editDegree.isCurrent} onChange={e => setEditDegree({ ...editDegree, isCurrent: e.target.checked })} className="h-4 w-4" />
+                Currently attending
+              </label>
+            </div>
+            <div className="flex gap-2 mt-5 justify-end">
+              <Button variant="outline" onClick={() => setEditDegree(null)} className="border-white/10 hover:bg-white/5">Cancel</Button>
+              <Button onClick={saveDegree} className="bg-gradient-to-r from-blue-600 to-blue-500 border-0">Save</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Course Modal */}
+      {editCourse && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => setEditCourse(null)}>
+          <div className="glass-card p-6 w-[480px]" onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold text-white mb-4">Edit Course</h3>
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <input type="text" placeholder="Code (e.g. CS 101)" value={editCourse.code ?? ''} onChange={e => setEditCourse({ ...editCourse, code: e.target.value })} className="px-4 py-2.5 rounded-lg border border-white/10 bg-white/5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40" />
+                <input type="text" placeholder="Grade" value={editCourse.grade ?? ''} onChange={e => setEditCourse({ ...editCourse, grade: e.target.value })} className="px-4 py-2.5 rounded-lg border border-white/10 bg-white/5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40" />
+              </div>
+              <input type="text" placeholder="Course Name *" value={editCourse.name} onChange={e => setEditCourse({ ...editCourse, name: e.target.value })} className="w-full px-4 py-2.5 rounded-lg border border-white/10 bg-white/5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40" />
+              <div className="grid grid-cols-2 gap-3">
+                <input type="number" step="0.5" placeholder="Credits" value={editCourse.credits ?? ''} onChange={e => setEditCourse({ ...editCourse, credits: e.target.value ? parseFloat(e.target.value) : undefined })} className="px-4 py-2.5 rounded-lg border border-white/10 bg-white/5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40" />
+                <input type="text" placeholder="Term (e.g. Fall 2023)" value={editCourse.term ?? ''} onChange={e => setEditCourse({ ...editCourse, term: e.target.value })} className="px-4 py-2.5 rounded-lg border border-white/10 bg-white/5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40" />
+              </div>
+              <label className="flex items-center gap-2 text-sm text-white/60">
+                <input type="checkbox" checked={editCourse.isMajorRelated} onChange={e => setEditCourse({ ...editCourse, isMajorRelated: e.target.checked })} className="h-4 w-4" />
+                Major-related
+              </label>
+            </div>
+            <div className="flex gap-2 mt-5 justify-end">
+              <Button variant="outline" onClick={() => setEditCourse(null)} className="border-white/10 hover:bg-white/5">Cancel</Button>
+              <Button onClick={saveCourse} className="bg-gradient-to-r from-blue-600 to-blue-500 border-0">Save</Button>
             </div>
           </div>
         </div>

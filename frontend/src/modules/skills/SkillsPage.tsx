@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import api from '@/lib/api'
 import { Button } from '@/components/ui/button'
-import { Loader2, Plus, Trash2 } from 'lucide-react'
+import { Loader2, Plus, Trash2, Pencil } from 'lucide-react'
 
 interface Skill {
   id: string
@@ -97,6 +97,37 @@ export default function SkillsPage() {
     await api.post('/skills/certificates', newCert)
     setNewCert({ name: '', issuer: '', dateObtained: '', expiry: '', credentialId: '', url: '', description: '' })
     setShowAddCert(false)
+    loadData()
+  }
+
+  // Edit modals
+  const [editSkill, setEditSkill] = useState<Skill | null>(null)
+  const [editCert, setEditCert] = useState<Certificate | null>(null)
+
+  const saveEditSkill = async () => {
+    if (!editSkill || !editSkill.name) return
+    await api.put(`/skills/${editSkill.id}`, {
+      name: editSkill.name,
+      category: editSkill.category,
+      proficiency: editSkill.proficiency,
+      source: editSkill.source,
+    })
+    setEditSkill(null)
+    loadData()
+  }
+
+  const saveEditCert = async () => {
+    if (!editCert || !editCert.name) return
+    await api.put(`/skills/certificates/${editCert.id}`, {
+      name: editCert.name,
+      issuer: editCert.issuer,
+      dateObtained: editCert.dateObtained,
+      expiry: editCert.expiry,
+      credentialId: editCert.credentialId,
+      url: editCert.url,
+      description: editCert.description,
+    })
+    setEditCert(null)
     loadData()
   }
 
@@ -197,6 +228,9 @@ export default function SkillsPage() {
                   <div key={skill.id} className="flex items-center gap-2 bg-accent px-3 py-2 rounded-md">
                     <span className="text-sm font-medium">{skill.name}</span>
                     <span className="text-xs text-muted-foreground">{skill.proficiency}</span>
+                    <button onClick={() => setEditSkill(skill)} className="text-muted-foreground hover:text-foreground">
+                      <Pencil className="h-3 w-3" />
+                    </button>
                     <button onClick={() => deleteSkill(skill.id)} className="text-destructive hover:text-destructive/80">
                       <Trash2 className="h-3 w-3" />
                     </button>
@@ -258,6 +292,9 @@ export default function SkillsPage() {
                       Verify
                     </a>
                   )}
+                  <Button variant="ghost" size="sm" onClick={() => setEditCert(cert)}>
+                    <Pencil className="h-4 w-4 text-muted-foreground" />
+                  </Button>
                   <Button variant="ghost" size="sm" onClick={() => deleteCert(cert.id)}>
                     <Trash2 className="h-4 w-4 text-destructive" />
                   </Button>
@@ -268,6 +305,51 @@ export default function SkillsPage() {
           ))}
         </div>
       )}
+      {/* Edit Skill Modal */}
+      {editSkill && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setEditSkill(null)}>
+          <div className="bg-card border rounded-lg p-6 w-[420px]" onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold mb-4">Edit Skill</h3>
+            <div className="space-y-3">
+              <input placeholder="Skill Name" value={editSkill.name} onChange={e => setEditSkill({ ...editSkill, name: e.target.value })} className="w-full px-3 py-2 rounded-md border bg-background text-sm" />
+              <select value={editSkill.category} onChange={e => setEditSkill({ ...editSkill, category: e.target.value })} className="w-full px-3 py-2 rounded-md border bg-background text-sm">
+                {categories.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+              <select value={editSkill.proficiency} onChange={e => setEditSkill({ ...editSkill, proficiency: e.target.value })} className="w-full px-3 py-2 rounded-md border bg-background text-sm">
+                {proficiencies.map(p => <option key={p} value={p}>{p}</option>)}
+              </select>
+              <input placeholder="Source (e.g. Course or Project)" value={editSkill.source ?? ''} onChange={e => setEditSkill({ ...editSkill, source: e.target.value })} className="w-full px-3 py-2 rounded-md border bg-background text-sm" />
+            </div>
+            <div className="flex gap-2 mt-5 justify-end">
+              <Button variant="outline" onClick={() => setEditSkill(null)}>Cancel</Button>
+              <Button onClick={saveEditSkill}>Save</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Certificate Modal */}
+      {editCert && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setEditCert(null)}>
+          <div className="bg-card border rounded-lg p-6 w-[520px] max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold mb-4">Edit Certificate</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <input placeholder="Certificate Name" value={editCert.name} onChange={e => setEditCert({ ...editCert, name: e.target.value })} className="px-3 py-2 rounded-md border bg-background text-sm" />
+              <input placeholder="Issuing Organization" value={editCert.issuer ?? ''} onChange={e => setEditCert({ ...editCert, issuer: e.target.value })} className="px-3 py-2 rounded-md border bg-background text-sm" />
+              <input placeholder="Date Obtained (YYYY-MM)" value={editCert.dateObtained ?? ''} onChange={e => setEditCert({ ...editCert, dateObtained: e.target.value })} className="px-3 py-2 rounded-md border bg-background text-sm" />
+              <input placeholder="Expiry (YYYY-MM)" value={editCert.expiry ?? ''} onChange={e => setEditCert({ ...editCert, expiry: e.target.value })} className="px-3 py-2 rounded-md border bg-background text-sm" />
+              <input placeholder="Credential ID" value={editCert.credentialId ?? ''} onChange={e => setEditCert({ ...editCert, credentialId: e.target.value })} className="px-3 py-2 rounded-md border bg-background text-sm" />
+              <input placeholder="Verification URL" value={editCert.url ?? ''} onChange={e => setEditCert({ ...editCert, url: e.target.value })} className="px-3 py-2 rounded-md border bg-background text-sm" />
+              <textarea placeholder="Description" value={editCert.description ?? ''} onChange={e => setEditCert({ ...editCert, description: e.target.value })} className="px-3 py-2 rounded-md border bg-background text-sm min-h-[80px] md:col-span-2" />
+            </div>
+            <div className="flex gap-2 mt-5 justify-end">
+              <Button variant="outline" onClick={() => setEditCert(null)}>Cancel</Button>
+              <Button onClick={saveEditCert}>Save</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* AI Extraction Modal */}
       {showExtractModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">

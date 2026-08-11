@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import api from '@/lib/api'
 import { Button } from '@/components/ui/button'
-import { Loader2, Plus, Trash2, ExternalLink } from 'lucide-react'
+import { Loader2, Plus, Trash2, ExternalLink, Pencil } from 'lucide-react'
 
 interface WorkExp {
   id: string
@@ -67,6 +67,41 @@ export default function ExperiencePage() {
     await api.post('/experience/projects', newProj)
     setNewProj({ name: '', description: '', technologies: '', link: '', startDate: '', endDate: '', isCurrent: false, isPortfolioProject: false })
     setShowAddProj(false)
+    loadData()
+  }
+
+  // Edit modals
+  const [editWork, setEditWork] = useState<WorkExp | null>(null)
+  const [editProj, setEditProj] = useState<Project | null>(null)
+
+  const saveEditWork = async () => {
+    if (!editWork || !editWork.company || !editWork.title) return
+    await api.put(`/experience/work/${editWork.id}`, {
+      company: editWork.company,
+      title: editWork.title,
+      location: editWork.location,
+      startDate: editWork.startDate,
+      endDate: editWork.endDate,
+      isCurrent: editWork.isCurrent,
+      bullets: editWork.bullets,
+    })
+    setEditWork(null)
+    loadData()
+  }
+
+  const saveEditProj = async () => {
+    if (!editProj || !editProj.name) return
+    await api.put(`/experience/projects/${editProj.id}`, {
+      name: editProj.name,
+      description: editProj.description,
+      technologies: editProj.technologies,
+      link: editProj.link,
+      startDate: editProj.startDate,
+      endDate: editProj.endDate,
+      isCurrent: editProj.isCurrent,
+      isPortfolioProject: editProj.isPortfolioProject,
+    })
+    setEditProj(null)
     loadData()
   }
 
@@ -161,9 +196,14 @@ export default function ExperiencePage() {
                     {exp.startDate} — {exp.isCurrent ? 'Present' : exp.endDate}
                   </p>
                 </div>
-                <Button variant="ghost" size="sm" onClick={() => deleteWork(exp.id)}>
-                  <Trash2 className="h-4 w-4 text-destructive" />
-                </Button>
+                <div className="flex gap-1">
+                  <Button variant="ghost" size="sm" onClick={() => setEditWork(exp)}>
+                    <Pencil className="h-4 w-4 text-muted-foreground" />
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => deleteWork(exp.id)}>
+                    <Trash2 className="h-4 w-4 text-destructive" />
+                  </Button>
+                </div>
               </div>
               {exp.bullets && (
                 <div className="mt-3 text-sm whitespace-pre-line text-muted-foreground">{exp.bullets}</div>
@@ -235,6 +275,9 @@ export default function ExperiencePage() {
                       <ExternalLink className="h-4 w-4 text-muted-foreground hover:text-primary" />
                     </a>
                   )}
+                  <Button variant="ghost" size="sm" onClick={() => setEditProj(proj)}>
+                    <Pencil className="h-4 w-4 text-muted-foreground" />
+                  </Button>
                   <Button variant="ghost" size="sm" onClick={() => deleteProject(proj.id)}>
                     <Trash2 className="h-4 w-4 text-destructive" />
                   </Button>
@@ -243,6 +286,62 @@ export default function ExperiencePage() {
               {proj.description && <p className="mt-3 text-sm text-muted-foreground">{proj.description}</p>}
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Edit Work Modal */}
+      {editWork && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setEditWork(null)}>
+          <div className="bg-card border rounded-lg p-6 w-[560px] max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold mb-4">Edit Work Experience</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <input placeholder="Company" value={editWork.company} onChange={e => setEditWork({ ...editWork, company: e.target.value })} className="px-3 py-2 rounded-md border bg-background text-sm" />
+              <input placeholder="Job Title" value={editWork.title} onChange={e => setEditWork({ ...editWork, title: e.target.value })} className="px-3 py-2 rounded-md border bg-background text-sm" />
+              <input placeholder="Location" value={editWork.location ?? ''} onChange={e => setEditWork({ ...editWork, location: e.target.value })} className="px-3 py-2 rounded-md border bg-background text-sm" />
+              <div className="flex items-center gap-2">
+                <input type="checkbox" checked={editWork.isCurrent} onChange={e => setEditWork({ ...editWork, isCurrent: e.target.checked })} />
+                <span className="text-sm">Current position</span>
+              </div>
+              <input placeholder="Start Date (YYYY-MM)" value={editWork.startDate ?? ''} onChange={e => setEditWork({ ...editWork, startDate: e.target.value })} className="px-3 py-2 rounded-md border bg-background text-sm" />
+              <input placeholder="End Date (YYYY-MM)" value={editWork.endDate ?? ''} onChange={e => setEditWork({ ...editWork, endDate: e.target.value })} className="px-3 py-2 rounded-md border bg-background text-sm" />
+              <textarea placeholder="Bullet points (one per line)" value={editWork.bullets ?? ''} onChange={e => setEditWork({ ...editWork, bullets: e.target.value })} className="px-3 py-2 rounded-md border bg-background text-sm min-h-[120px] md:col-span-2" />
+            </div>
+            <div className="mt-4 flex gap-2 justify-end">
+              <Button variant="outline" onClick={() => setEditWork(null)}>Cancel</Button>
+              <Button onClick={saveEditWork}>Save</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Project Modal */}
+      {editProj && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setEditProj(null)}>
+          <div className="bg-card border rounded-lg p-6 w-[560px] max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold mb-4">Edit Project</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <input placeholder="Project Name" value={editProj.name} onChange={e => setEditProj({ ...editProj, name: e.target.value })} className="px-3 py-2 rounded-md border bg-background text-sm" />
+              <input placeholder="Technologies (comma separated)" value={editProj.technologies ?? ''} onChange={e => setEditProj({ ...editProj, technologies: e.target.value })} className="px-3 py-2 rounded-md border bg-background text-sm" />
+              <input placeholder="Project Link" value={editProj.link ?? ''} onChange={e => setEditProj({ ...editProj, link: e.target.value })} className="px-3 py-2 rounded-md border bg-background text-sm" />
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2">
+                  <input type="checkbox" checked={editProj.isCurrent} onChange={e => setEditProj({ ...editProj, isCurrent: e.target.checked })} />
+                  <span className="text-sm">Ongoing</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input type="checkbox" checked={editProj.isPortfolioProject} onChange={e => setEditProj({ ...editProj, isPortfolioProject: e.target.checked })} />
+                  <span className="text-sm">Portfolio</span>
+                </div>
+              </div>
+              <input placeholder="Start Date (YYYY-MM)" value={editProj.startDate ?? ''} onChange={e => setEditProj({ ...editProj, startDate: e.target.value })} className="px-3 py-2 rounded-md border bg-background text-sm" />
+              <input placeholder="End Date (YYYY-MM)" value={editProj.endDate ?? ''} onChange={e => setEditProj({ ...editProj, endDate: e.target.value })} className="px-3 py-2 rounded-md border bg-background text-sm" />
+              <textarea placeholder="Description" value={editProj.description ?? ''} onChange={e => setEditProj({ ...editProj, description: e.target.value })} className="px-3 py-2 rounded-md border bg-background text-sm min-h-[100px] md:col-span-2" />
+            </div>
+            <div className="mt-4 flex gap-2 justify-end">
+              <Button variant="outline" onClick={() => setEditProj(null)}>Cancel</Button>
+              <Button onClick={saveEditProj}>Save</Button>
+            </div>
+          </div>
         </div>
       )}
     </div>

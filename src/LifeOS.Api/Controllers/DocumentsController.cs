@@ -43,10 +43,18 @@ public class DocumentsController : ControllerBase
     public async Task<IActionResult> GenerateResume([FromBody] GenerateResumeRequest request, CancellationToken ct)
     {
         var userId = GetUserId();
-        var data = await _resumeDataBuilder.BuildAsync(userId, ct);
+
+        // Use the editor's current data when provided; otherwise build fresh from DB
+        ResumeDataDto data = request.Data ?? await _resumeDataBuilder.BuildAsync(userId, ct);
         data.Template = request.Template ?? data.Template;
         data.Title = request.Title ?? data.Title;
-        data.SectionOrder = request.SectionOrder ?? data.SectionOrder;
+        if (request.SectionOrder != null && request.SectionOrder.Count > 0)
+            data.SectionOrder = request.SectionOrder;
+
+        if (string.IsNullOrWhiteSpace(data.Template))
+            data.Template = "harvard";
+        if (data.SectionOrder == null || data.SectionOrder.Count == 0)
+            data.SectionOrder = new List<string> { "education", "experience", "skills", "projects", "certifications" };
 
         var pdfBytes = await _resumeGenerator.GenerateResumePdfAsync(data, data.Template, ct);
         var filename = $"{SafeFilename(data.Profile.FullName)}_resume_{data.Template}_{DateTimeOffset.UtcNow:yyyyMMdd_HHmmss}.pdf";
@@ -204,6 +212,7 @@ public class GenerateResumeRequest
     public string? Title { get; set; }
     public string? Template { get; set; }
     public List<string>? SectionOrder { get; set; }
+    public ResumeDataDto? Data { get; set; }
 }
 
 public class GenerateCoverLetterAiRequest

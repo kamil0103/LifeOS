@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import api from '@/lib/api'
 import { Button } from '@/components/ui/button'
-import { Loader2, FileText, Save, Download, Shield } from 'lucide-react'
+import { Loader2, FileText, Save, Download, Shield, Sparkles, X } from 'lucide-react'
 
 interface ResumeProfile {
   fullName: string
@@ -56,6 +56,12 @@ interface ResumeCertification {
   date?: string
 }
 
+interface ResumeRecommendation {
+  type: string
+  text: string
+  target?: string
+}
+
 interface ResumeData {
   title: string
   template: string
@@ -66,6 +72,8 @@ interface ResumeData {
   skills: ResumeSkillGroup[]
   projects: ResumeProject[]
   certifications: ResumeCertification[]
+  courses?: Array<{ code?: string; name: string; grade?: string; credits?: string; term?: string }>
+  pendingRecommendations?: ResumeRecommendation[]
 }
 
 interface ResumeVersion {
@@ -89,6 +97,10 @@ export default function ResumeEditorPage() {
   const [isCheckingAts, setIsCheckingAts] = useState(false)
   const [selectedJobId, setSelectedJobId] = useState('')
   const [savedJobs, setSavedJobs] = useState<Array<{ id: string; title: string; company: string }>>([])
+  const [isTailoring, setIsTailoring] = useState(false)
+  const [showTailorModal, setShowTailorModal] = useState(false)
+  const [changeSummary, setChangeSummary] = useState<string[]>([])
+  const [recommendations, setRecommendations] = useState<ResumeRecommendation[]>([])
 
   useEffect(() => {
     loadData()
@@ -117,6 +129,71 @@ export default function ResumeEditorPage() {
     } finally {
       setIsCheckingAts(false)
     }
+  }
+
+  const tailorResume = async (mode: 'modify' | 'create') => {
+    if (!selectedJobId || !resumeData) return
+    setIsTailoring(true)
+    setShowTailorModal(false)
+    try {
+      const { data } = await api.post('/ats/tailor', {
+        jobId: selectedJobId,
+        resumeData,
+        mode,
+      })
+
+      const tailored = data.tailoredResume
+      setChangeSummary(data.changeSummary || [])
+      setRecommendations(data.recommendations || [])
+
+      if (mode === 'modify') {
+        setResumeData({ ...tailored, pendingRecommendations: data.recommendations || [] })
+      } else {
+        // Save as a new version
+        const job = savedJobs.find(j => j.id === selectedJobId)
+        const newTitle = job ? `${job.title} at ${job.company}` : 'Tailored Resume'
+        tailored.title = newTitle
+        await api.post('/resume-versions', {
+          title: newTitle,
+          template: tailored.template || 'harvard',
+          data: tailored,
+        })
+        setResumeData({ ...tailored, pendingRecommendations: data.recommendations || [] })
+        const { data: versions } = await api.get('/resume-versions')
+        setVersions(versions)
+      }
+    } catch (err: any) {
+      console.error(err)
+      alert(err?.response?.data?.detail || 'Resume tailoring failed')
+    } finally {
+      setIsTailoring(false)
+    }
+  }
+
+  const approveRecommendation = (index: number) => {
+    const rec = recommendations[index]
+    if (!rec || !resumeData) return
+
+    if (rec.type === 'skill' && rec.target) {
+      // Add the skill to the resume data skills group
+      const skills = [...resumeData.skills]
+      const groupIdx = skills.findIndex(g => g.category.toLowerCase() === (rec.target || '').toLowerCase())
+      if (groupIdx >= 0) {
+        if (!skills[groupIdx].skills.includes(rec.text)) {
+          skills[groupIdx] = { ...skills[groupIdx], skills: [...skills[groupIdx].skills, rec.text] }
+        }
+      } else {
+        skills.push({ category: rec.target || 'Other', skills: [rec.text] })
+      }
+      setResumeData({ ...resumeData, skills })
+    }
+    // notes/keywords: approving simply acknowledges (removes from list)
+
+    setRecommendations(recommendations.filter((_, i) => i !== index))
+  }
+
+  const dismissRecommendation = (index: number) => {
+    setRecommendations(recommendations.filter((_, i) => i !== index))
   }
 
   const loadData = async () => {
@@ -162,6 +239,7 @@ export default function ResumeEditorPage() {
         title: resumeData.title,
         template: resumeData.template,
         sectionOrder: resumeData.sectionOrder,
+        data: resumeData,
       }, { responseType: 'blob' })
       const blob = new Blob([response.data], { type: 'application/pdf' })
       const url = window.URL.createObjectURL(blob)
@@ -170,9 +248,10 @@ export default function ResumeEditorPage() {
       a.download = `${resumeData.profile.fullName || 'resume'}_resume.pdf`
       a.click()
       window.URL.revokeObjectURL(url)
-    } catch (err) {
+    } catch (err: any) {
       console.error(err)
-      alert('Failed to generate resume')
+      const detail = err?.response?.data?.detail || err?.response?.data?.title || err?.message || 'Unknown error'
+      alert(`Failed to generate resume: ${detail}`)
     } finally {
       setIsGenerating(false)
     }
@@ -300,24 +379,22 @@ export default function ResumeEditorPage() {
                 <label className="text-sm font-medium mb-2 block">Template</label>
                 <select
                   className="w-full px-3 py-2 border rounded-md bg-background text-sm"
-                  value={resumeData.template}
+                  value={resumeData.template || 'harvard'}
                   onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setResumeData({ ...resumeData, template: e.target.value })}
                 >
-                  <option value="modern">Modern</option>
-                  <option value="classic">Classic</option>
-                  <option value="minimal">Minimal</option>
+                  <option value="harvard">Harvard</option>
                 </select>
               </div>
             </div>
           </div>
 
-          {/* ATS Check */}
+          {/* ATS Check + Tailor */}
           <div className="bg-card border rounded-lg p-6">
             <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
               <Shield className="h-5 w-5 text-primary" />
-              ATS Check
+              Tailor to Job
             </h2>
-            <p className="text-sm text-muted-foreground mb-3">Check how well your resume matches a specific job description.</p>
+            <p className="text-sm text-muted-foreground mb-3">Check your ATS score, or let AI rewrite your resume to best fit a job using only your real data.</p>
             <div className="flex gap-2">
               <select
                 className="flex-1 px-3 py-2 border rounded-md bg-background text-sm"
@@ -329,12 +406,55 @@ export default function ResumeEditorPage() {
                   <option key={job.id} value={job.id}>{job.title} at {job.company}</option>
                 ))}
               </select>
-              <Button onClick={checkAts} disabled={isCheckingAts || !selectedJobId}>
+              <Button variant="outline" onClick={checkAts} disabled={isCheckingAts || !selectedJobId}>
                 {isCheckingAts ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Shield className="mr-2 h-4 w-4" />}
-                Check
+                ATS Check
+              </Button>
+              <Button onClick={() => setShowTailorModal(true)} disabled={isTailoring || !selectedJobId}>
+                {isTailoring ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
+                Tailor Resume
               </Button>
             </div>
+
+            {/* Change Summary */}
+            {changeSummary.length > 0 && (
+              <div className="mt-4 border-t pt-4">
+                <h3 className="text-sm font-medium mb-2">What the AI changed:</h3>
+                <ul className="text-sm text-muted-foreground list-disc pl-5 space-y-1">
+                  {changeSummary.map((c, i) => <li key={i}>{c}</li>)}
+                </ul>
+              </div>
+            )}
           </div>
+
+          {/* Recommendations Tray */}
+          {recommendations.length > 0 && (
+            <div className="bg-amber-500/5 border border-amber-500/20 rounded-lg p-6">
+              <h2 className="text-lg font-semibold mb-1 flex items-center gap-2">
+                <Sparkles className="h-5 w-5 text-amber-500" />
+                Recommendations
+              </h2>
+              <p className="text-sm text-muted-foreground mb-4">
+                The job wants things not currently in your data. Approve to apply, or dismiss.
+              </p>
+              <div className="space-y-2">
+                {recommendations.map((rec, i) => (
+                  <div key={i} className="flex items-center gap-3 bg-background/50 border rounded-md p-3">
+                    <span className={`text-xs px-2 py-0.5 rounded shrink-0 ${
+                      rec.type === 'skill' ? 'bg-blue-500/10 text-blue-400' :
+                      rec.type === 'keyword' ? 'bg-purple-500/10 text-purple-400' :
+                      'bg-white/5 text-white/50'
+                    }`}>{rec.type}</span>
+                    <p className="text-sm flex-1">{rec.text}</p>
+                    <Button size="sm" variant="outline" onClick={() => approveRecommendation(i)}>Approve</Button>
+                    <Button size="sm" variant="ghost" className="text-muted-foreground" onClick={() => dismissRecommendation(i)}>
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Section Order */}
           <div className="bg-card border rounded-lg p-6">
@@ -482,6 +602,29 @@ export default function ResumeEditorPage() {
               </div>
             ))
           )}
+        </div>
+      )}
+
+      {/* Tailor Mode Modal */}
+      {showTailorModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowTailorModal(false)}>
+          <div className="bg-card border rounded-lg p-6 w-[440px]" onClick={e => e.stopPropagation()}>
+            <h2 className="text-xl font-semibold mb-2">Tailor Resume with AI</h2>
+            <p className="text-sm text-muted-foreground mb-5">
+              AI will rewrite your experience and education to best fit this job using only your real data. Nothing is fabricated.
+            </p>
+            <div className="space-y-3">
+              <Button className="w-full" onClick={() => tailorResume('modify')} disabled={isTailoring}>
+                {isTailoring ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
+                Update Current Editor
+              </Button>
+              <Button variant="outline" className="w-full" onClick={() => tailorResume('create')} disabled={isTailoring}>
+                {isTailoring ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                Save as New Version
+              </Button>
+              <Button variant="ghost" className="w-full" onClick={() => setShowTailorModal(false)}>Cancel</Button>
+            </div>
+          </div>
         </div>
       )}
 

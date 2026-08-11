@@ -15,11 +15,12 @@ public class QuestPdfResumeGenerator : IResumeGenerator
 
     public Task<byte[]> GenerateResumePdfAsync(ResumeDataDto data, string template, CancellationToken ct = default)
     {
-        var document = template.ToLowerInvariant() switch
+        var document = (template ?? "harvard").ToLowerInvariant() switch
         {
             "classic" => BuildClassicResume(data),
             "minimal" => BuildMinimalResume(data),
-            _ => BuildModernResume(data)
+            "modern" => BuildModernResume(data),
+            _ => BuildHarvardResume(data)
         };
 
         using var stream = new MemoryStream();
@@ -33,6 +34,197 @@ public class QuestPdfResumeGenerator : IResumeGenerator
         using var stream = new MemoryStream();
         document.GeneratePdf(stream);
         return Task.FromResult(stream.ToArray());
+    }
+
+    // ========================
+    // HARVARD TEMPLATE (default)
+    // ========================
+    private IDocument BuildHarvardResume(ResumeDataDto data)
+    {
+        var order = (data.SectionOrder != null && data.SectionOrder.Count > 0)
+            ? data.SectionOrder
+            : new List<string> { "education", "experience", "skills", "projects", "certifications" };
+
+        return Document.Create(container =>
+        {
+            container.Page(page =>
+            {
+                page.Size(PageSizes.Letter);
+                page.Margin(0.75f, Unit.Inch);
+                page.DefaultTextStyle(x => x.FontSize(10).FontFamily("Georgia").FontColor("#111111"));
+
+                page.Content().Column(main =>
+                {
+                    // ===== Header =====
+                    main.Item().AlignCenter().Text(data.Profile.FullName ?? "").FontSize(18).Bold();
+                    main.Item().AlignCenter().PaddingTop(2).Text(text =>
+                    {
+                        var parts = new List<string>();
+                        if (!string.IsNullOrWhiteSpace(data.Profile.Location)) parts.Add(data.Profile.Location);
+                        if (!string.IsNullOrWhiteSpace(data.Profile.Email)) parts.Add(data.Profile.Email);
+                        if (!string.IsNullOrWhiteSpace(data.Profile.Phone)) parts.Add(data.Profile.Phone);
+                        if (!string.IsNullOrWhiteSpace(data.Profile.LinkedIn)) parts.Add(data.Profile.LinkedIn);
+                        if (!string.IsNullOrWhiteSpace(data.Profile.GitHub)) parts.Add(data.Profile.GitHub);
+                        if (!string.IsNullOrWhiteSpace(data.Profile.Portfolio)) parts.Add(data.Profile.Portfolio);
+                        text.Span(string.Join("  •  ", parts)).FontSize(9).FontColor("#333333");
+                    });
+                    main.Item().PaddingTop(6).BorderBottom(1).BorderColor("#111111");
+
+                    // Summary (optional)
+                    if (!string.IsNullOrWhiteSpace(data.Profile.Summary))
+                    {
+                        main.Item().PaddingTop(8).Text(data.Profile.Summary).FontSize(9.5f).FontColor("#333333");
+                    }
+
+                    // ===== Sections in order =====
+                    foreach (var section in order)
+                    {
+                        switch (section.ToLowerInvariant())
+                        {
+                            case "education": AddHarvardEducation(main, data.Education ?? new(), data.Courses ?? new()); break;
+                            case "experience": AddHarvardExperience(main, data.Experience ?? new()); break;
+                            case "skills": AddHarvardSkills(main, data.Skills ?? new()); break;
+                            case "projects": AddHarvardProjects(main, data.Projects ?? new()); break;
+                            case "certifications": AddHarvardCertifications(main, data.Certifications ?? new()); break;
+                        }
+                    }
+                });
+            });
+        });
+    }
+
+    private static void HarvardHeader(ColumnDescriptor main, string title)
+    {
+        main.Item().PaddingTop(12).Text(title.ToUpperInvariant()).FontSize(11).Bold().LetterSpacing(0.05f);
+        main.Item().PaddingTop(1).PaddingBottom(3).BorderBottom(0.5f).BorderColor("#999999");
+    }
+
+    private static void AddHarvardEducation(ColumnDescriptor main, List<ResumeEducationDto> education, List<ResumeCourseDto> courses)
+    {
+        if (!education.Any()) return;
+        HarvardHeader(main, "Education");
+        foreach (var edu in education)
+        {
+            main.Item().PaddingTop(5).Column(col =>
+            {
+                col.Item().Row(row =>
+                {
+                    row.RelativeItem().Text(edu.School ?? "").Bold();
+                    row.AutoItem().Text(edu.IsCurrent
+                        ? (edu.StartDate ?? "")
+                        : (edu.EndDate ?? edu.GraduationDate ?? "")).FontSize(9).FontColor("#333333");
+                });
+                col.Item().Row(row =>
+                {
+                    var degreeText = string.IsNullOrWhiteSpace(edu.Degree) ? "" : edu.Degree;
+                    if (!string.IsNullOrWhiteSpace(edu.Field)) degreeText += string.IsNullOrWhiteSpace(degreeText) ? edu.Field : $", {edu.Field}";
+                    if (!string.IsNullOrWhiteSpace(edu.Gpa)) degreeText += $". GPA {edu.Gpa}";
+                    row.RelativeItem().Text(degreeText).FontSize(9.5f);
+                    row.AutoItem().Text(edu.StartDate != null && edu.EndDate != null && !edu.IsCurrent ? $"{edu.StartDate} — {edu.EndDate}" : "").FontSize(9).FontColor("#333333");
+                });
+                if (!string.IsNullOrWhiteSpace(edu.Honors))
+                    col.Item().Text(edu.Honors).FontSize(9).Italic().FontColor("#333333");
+            });
+        }
+
+        // Relevant coursework (major-related only)
+        var relevant = courses.Where(c => !string.IsNullOrWhiteSpace(c.Name)).Select(c => string.IsNullOrWhiteSpace(c.Code) ? c.Name : $"{c.Code} {c.Name}").ToList();
+        if (relevant.Any())
+        {
+            main.Item().PaddingTop(4).Text(text =>
+            {
+                text.Span("Relevant Coursework: ").Bold().FontSize(9);
+                text.Span(string.Join(", ", relevant)).FontSize(9);
+            });
+        }
+    }
+
+    private static void AddHarvardExperience(ColumnDescriptor main, List<ResumeExperienceDto> experience)
+    {
+        if (!experience.Any()) return;
+        HarvardHeader(main, "Experience");
+        foreach (var exp in experience)
+        {
+            main.Item().PaddingTop(6).Column(col =>
+            {
+                col.Item().Row(row =>
+                {
+                    row.RelativeItem().Text(exp.Company ?? "").Bold();
+                    row.AutoItem().Text(exp.Location ?? "").FontSize(9).FontColor("#333333");
+                });
+                col.Item().Row(row =>
+                {
+                    row.RelativeItem().Text(exp.Title ?? "").Italic().FontSize(9.5f);
+                    var end = exp.IsCurrent ? "Present" : (exp.EndDate ?? "");
+                    row.AutoItem().Text($"{exp.StartDate ?? ""} — {end}").FontSize(9).FontColor("#333333");
+                });
+                foreach (var bullet in exp.BulletList)
+                {
+                    col.Item().PaddingLeft(14).PaddingTop(1).Text(text =>
+                    {
+                        text.Span("•  ").FontSize(9.5f);
+                        text.Span(bullet).FontSize(9.5f);
+                    });
+                }
+            });
+        }
+    }
+
+    private static void AddHarvardProjects(ColumnDescriptor main, List<ResumeProjectDto> projects)
+    {
+        if (!projects.Any()) return;
+        HarvardHeader(main, "Projects");
+        foreach (var proj in projects)
+        {
+            main.Item().PaddingTop(5).Column(col =>
+            {
+                col.Item().Row(row =>
+                {
+                    row.RelativeItem().Text(proj.Name ?? "").Bold();
+                    if (!string.IsNullOrWhiteSpace(proj.Link))
+                        row.AutoItem().Text(proj.Link).FontSize(9).FontColor("#333333");
+                });
+                if (!string.IsNullOrWhiteSpace(proj.Description))
+                    col.Item().PaddingLeft(14).Text($"•  {proj.Description}").FontSize(9.5f);
+                if (!string.IsNullOrWhiteSpace(proj.Technologies))
+                    col.Item().PaddingLeft(14).Text(text =>
+                    {
+                        text.Span("•  ").FontSize(9.5f);
+                        text.Span("Technologies: ").Bold().FontSize(9.5f);
+                        text.Span(proj.Technologies).FontSize(9.5f);
+                    });
+            });
+        }
+    }
+
+    private static void AddHarvardSkills(ColumnDescriptor main, List<ResumeSkillGroupDto> skills)
+    {
+        if (!skills.Any()) return;
+        HarvardHeader(main, "Skills & Interests");
+        main.Item().PaddingTop(4).Column(col =>
+        {
+            foreach (var group in skills)
+            {
+                if (!group.Skills.Any()) continue;
+                col.Item().PaddingTop(1).Text(text =>
+                {
+                    text.Span($"{group.Category ?? "Skills"}: ").Bold().FontSize(9.5f);
+                    text.Span(string.Join(", ", group.Skills)).FontSize(9.5f);
+                });
+            }
+        });
+    }
+
+    private static void AddHarvardCertifications(ColumnDescriptor main, List<ResumeCertificationDto> certs)
+    {
+        if (!certs.Any()) return;
+        HarvardHeader(main, "Certifications");
+        foreach (var cert in certs)
+        {
+            var line = $"{cert.Name ?? ""} — {cert.Organization ?? ""}";
+            if (!string.IsNullOrWhiteSpace(cert.Date)) line += $" ({cert.Date})";
+            main.Item().PaddingLeft(14).PaddingTop(1).Text($"•  {line}").FontSize(9.5f);
+        }
     }
 
     // ========================

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import api from '@/lib/api'
 import { Button } from '@/components/ui/button'
-import { Loader2, Plus, Trash2, ExternalLink, Sparkles, Search, Save, Rss, Target, MessageSquare, X, Briefcase } from 'lucide-react'
+import { Loader2, Plus, Trash2, ExternalLink, Sparkles, Search, Save, Rss, Target, MessageSquare, X, Briefcase, Pencil } from 'lucide-react'
 
 interface Job {
   id: string
@@ -61,6 +61,31 @@ export default function JobsPage() {
     source: 'manual'
   })
   const [jobError, setJobError] = useState<string | null>(null)
+
+  // Edit job modal
+  const [editJob, setEditJob] = useState<Job | null>(null)
+
+  const saveEditedJob = async () => {
+    if (!editJob) return
+    try {
+      await api.put(`/jobs/${editJob.id}`, {
+        title: editJob.title,
+        company: editJob.company,
+        location: editJob.location,
+        description: editJob.description,
+        url: editJob.url,
+        salaryRange: editJob.salaryRange,
+        jobType: editJob.jobType,
+        status: editJob.status,
+        matchScore: editJob.matchScore,
+      })
+      setEditJob(null)
+      loadSavedJobs()
+    } catch (err) {
+      console.error(err)
+      alert('Failed to update job')
+    }
+  }
 
   useEffect(() => {
     if (activeTab === 'saved') {
@@ -334,6 +359,46 @@ export default function JobsPage() {
         </div>
       )}
 
+      {/* Edit Job Modal */}
+      {editJob && (
+        <div className="glass-card p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-white">Edit Job</h3>
+            <Button variant="ghost" size="sm" onClick={() => setEditJob(null)} className="text-white/40 hover:text-white hover:bg-white/5">
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <input type="text" placeholder="Job Title *" value={editJob.title} onChange={e => setEditJob({ ...editJob, title: e.target.value })} className="px-4 py-2.5 rounded-lg border border-white/10 bg-white/5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40" />
+            <input type="text" placeholder="Company *" value={editJob.company} onChange={e => setEditJob({ ...editJob, company: e.target.value })} className="px-4 py-2.5 rounded-lg border border-white/10 bg-white/5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40" />
+            <input type="text" placeholder="Location" value={editJob.location ?? ''} onChange={e => setEditJob({ ...editJob, location: e.target.value })} className="px-4 py-2.5 rounded-lg border border-white/10 bg-white/5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40" />
+            <select value={editJob.jobType ?? 'full_time'} onChange={e => setEditJob({ ...editJob, jobType: e.target.value })} className="px-4 py-2.5 rounded-lg border border-white/10 bg-white/5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40">
+              <option value="full_time">Full Time</option>
+              <option value="part_time">Part Time</option>
+              <option value="contract">Contract</option>
+              <option value="internship">Internship</option>
+              <option value="remote">Remote</option>
+            </select>
+            <input type="text" placeholder="Salary Range" value={editJob.salaryRange ?? ''} onChange={e => setEditJob({ ...editJob, salaryRange: e.target.value })} className="px-4 py-2.5 rounded-lg border border-white/10 bg-white/5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40" />
+            <select value={editJob.status} onChange={e => setEditJob({ ...editJob, status: e.target.value })} className="px-4 py-2.5 rounded-lg border border-white/10 bg-white/5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40">
+              <option value="saved">Saved</option>
+              <option value="applied">Applied</option>
+              <option value="interview">Interview</option>
+              <option value="offer">Offer</option>
+              <option value="rejected">Rejected</option>
+            </select>
+            <input type="url" placeholder="Job URL" value={editJob.url ?? ''} onChange={e => setEditJob({ ...editJob, url: e.target.value })} className="px-4 py-2.5 rounded-lg border border-white/10 bg-white/5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40 md:col-span-2" />
+          </div>
+          <textarea placeholder="Job Description" value={editJob.description} onChange={e => setEditJob({ ...editJob, description: e.target.value })} rows={4} className="w-full mt-4 px-4 py-2.5 rounded-lg border border-white/10 bg-white/5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40" />
+          <div className="flex gap-2 mt-4">
+            <Button onClick={saveEditedJob} className="bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 border-0">
+              <Save className="mr-2 h-4 w-4" /> Save Changes
+            </Button>
+            <Button variant="outline" onClick={() => setEditJob(null)} className="border-white/10 hover:bg-white/5">Cancel</Button>
+          </div>
+        </div>
+      )}
+
       {activeTab === 'saved' && (
         <div className="space-y-4">
           {savedJobs.length === 0 && !showAddJob && (
@@ -379,6 +444,9 @@ export default function JobsPage() {
                       <ExternalLink className="h-4 w-4" />
                     </a>
                   )}
+                  <button onClick={() => setEditJob(job)} title="Edit Job" className="text-white/20 hover:text-blue-400 transition-colors">
+                    <Pencil className="h-4 w-4" />
+                  </button>
                   <button onClick={() => analyzeMatch(job.id)} disabled={analyzingId === job.id} title="Match Analysis" className="text-white/20 hover:text-blue-400 transition-colors">
                     <Target className={`h-4 w-4 ${analyzingId === job.id ? 'animate-pulse' : ''}`} />
                   </button>

@@ -53,6 +53,73 @@ public class AtsController : ControllerBase
         }
     }
 
+    [HttpPost("tailor")]
+    public async Task<ActionResult<TailorResumeResult>> TailorResume([FromBody] TailorResumeRequest request, CancellationToken ct)
+    {
+        var userId = GetUserId();
+        var job = await _context.Jobs.AsNoTracking().FirstOrDefaultAsync(j => j.Id == request.JobId && j.UserId == userId, ct);
+        if (job == null)
+            return NotFound(new ProblemDetails { Title = "Job not found" });
+
+        if (request.ResumeData == null)
+            return BadRequest(new ProblemDetails { Title = "Missing resume data" });
+
+        var resumeJson = JsonSerializer.Serialize(request.ResumeData, new JsonSerializerOptions { WriteIndented = false });
+
+        var systemPrompt = "You are an expert resume writer following Harvard Career Services guidelines. You rewrite resumes to best fit a specific job using ONLY the candidate's real data — never invent experience, skills, degrees, or achievements.";
+
+        var userPrompt = $@"Rewrite this resume to best fit the job below. Rules (Harvard Career Services):
+- Begin every bullet with a strong action verb (e.g., Developed, Implemented, Analyzed, Engineered, Designed, Led, Optimized, Streamlined).
+- Quantify results where possible. Use concise phrases, NOT full sentences. No personal pronouns (no I, we, my).
+- Reorder and rewrite experience bullets to emphasize skills the job values most.
+- Reorder skills so the most job-relevant appear first in each category.
+- Keep only relevant coursework. Drop irrelevant entries.
+- Do NOT fabricate: no new employers, titles, skills, degrees, certifications, or metrics that aren't supported by the original data.
+- Keep the same JSON structure exactly. Keep entity IDs unchanged.
+
+JOB POSTING:
+Title: {job.Title}
+Company: {job.Company}
+Description: {job.Description ?? "(no description)"}
+
+CURRENT RESUME JSON:
+{resumeJson}
+
+Return ONLY valid JSON with this exact structure:
+{{
+  ""tailoredResume"": ""<the full resume JSON, same structure as the input>"",
+  ""changeSummary"": [""<what you rewrote/reordered/removed and why>""],
+  ""recommendations"": [{{ ""type"": ""skill"", ""text"": ""<suggestion for something the job wants that the candidate lacks data for>"", ""target"": ""<optional category>"" }}]
+}}
+For recommendations, type may be skill, keyword, or note.";
+
+        try
+        {
+            var jsonResponse = await _aiProvider.CompleteJsonAsync(systemPrompt, userPrompt, ct);
+            var cleaned = jsonResponse.Trim();
+            if (cleaned.StartsWith("```json")) cleaned = cleaned[7..];
+            else if (cleaned.StartsWith("```")) cleaned = cleaned[3..];
+            if (cleaned.EndsWith("```")) cleaned = cleaned[..^3];
+            var firstBrace = cleaned.IndexOf('{');
+            var lastBrace = cleaned.LastIndexOf('}');
+            if (firstBrace >= 0 && lastBrace > firstBrace)
+                cleaned = cleaned[firstBrace..(lastBrace + 1)];
+
+            var result = JsonSerializer.Deserialize<TailorResumeResult>(cleaned, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            if (result?.TailoredResume == null)
+                return BadRequest(new ProblemDetails { Title = "AI returned no resume", Detail = "The AI response could not be parsed." });
+
+            // Never carry over pending recommendations into the new resume itself
+            result.TailoredResume.PendingRecommendations = new();
+
+            return Ok(result);
+        }
+        catch (Exception ex)
+        {
+            return BadRequest(new ProblemDetails { Title = "Tailoring failed", Detail = ex.Message });
+        }
+    }
+
     private async Task<string> BuildResumeData(Guid userId, CancellationToken ct)
     {
         var profile = await _context.UserProfiles.AsNoTracking().FirstOrDefaultAsync(p => p.UserId == userId, ct);
@@ -88,6 +155,20 @@ public class AtsCheckRequest
 {
     public Guid JobId { get; set; }
     public string? ResumeData { get; set; }
+}
+
+public class TailorResumeRequest
+{
+    public Guid JobId { get; set; }
+    public LifeOS.Application.DTOs.Documents.ResumeDataDto? ResumeData { get; set; }
+    public string Mode { get; set; } = "modify"; // "modify" | "create"
+}
+
+public class TailorResumeResult
+{
+    public LifeOS.Application.DTOs.Documents.ResumeDataDto TailoredResume { get; set; } = new();
+    public List<string> ChangeSummary { get; set; } = new();
+    public List<LifeOS.Application.DTOs.Documents.ResumeRecommendationDto> Recommendations { get; set; } = new();
 }
 
 public class AtsCheckResult

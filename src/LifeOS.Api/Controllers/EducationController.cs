@@ -269,6 +269,7 @@ public class EducationController : ControllerBase
     {
         Id = c.Id,
         DegreeId = c.DegreeId,
+        InstitutionId = c.InstitutionId,
         Code = c.Code,
         Name = c.Name,
         Grade = c.Grade,

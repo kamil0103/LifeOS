@@ -13,6 +13,16 @@ public class ResumeDataDto
     public List<ResumeProjectDto> Projects { get; set; } = new();
     public List<ResumeCertificationDto> Certifications { get; set; } = new();
     public List<ResumeCourseDto> Courses { get; set; } = new();
+
+    // Temporary AI recommendations (never rendered to PDF; user can approve or dismiss)
+    public List<ResumeRecommendationDto> PendingRecommendations { get; set; } = new();
+}
+
+public class ResumeRecommendationDto
+{
+    public string Type { get; set; } = string.Empty; // "skill" | "keyword" | "note"
+    public string Text { get; set; } = string.Empty;
+    public string? Target { get; set; }
 }
 
 public class ResumeProfileDto

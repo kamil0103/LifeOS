@@ -74,7 +74,7 @@ public class ResumeDataBuilder : IResumeDataBuilder
         return new ResumeDataDto
         {
             Title = "My Resume",
-            Template = "modern",
+            Template = "harvard",
             SectionOrder = new List<string> { "education", "experience", "skills", "projects", "certifications" },
             Profile = new ResumeProfileDto
             {

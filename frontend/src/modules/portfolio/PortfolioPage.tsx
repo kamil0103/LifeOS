@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import api from '@/lib/api'
 import { Button } from '@/components/ui/button'
-import { Loader2, ExternalLink, Github, Globe, Sparkles } from 'lucide-react'
+import { Loader2, ExternalLink, Github, Globe, Sparkles, Pencil } from 'lucide-react'
 
 interface PortfolioProject {
   id: string
@@ -88,6 +88,38 @@ export default function PortfolioPage() {
     }
   }
 
+  const [editProject, setEditProject] = useState<PortfolioProject | null>(null)
+
+  const saveEditProject = async () => {
+    if (!editProject || !editProject.name) return
+    try {
+      // Update core project fields
+      await api.put(`/experience/projects/${editProject.id}`, {
+        name: editProject.name,
+        description: editProject.description,
+        technologies: editProject.technologies,
+        link: editProject.link,
+        startDate: editProject.startDate,
+        endDate: editProject.endDate,
+        isCurrent: editProject.isCurrent,
+        isPortfolioProject: true,
+      })
+      // Update portfolio-specific fields
+      await api.put(`/portfolio/projects/${editProject.id}`, {
+        gitHubRepoUrl: editProject.gitHubRepoUrl,
+        deployedUrl: editProject.deployedUrl,
+        screenshotUrl: editProject.screenshotUrl,
+        isFeatured: editProject.isFeatured,
+        isPortfolioProject: true,
+      })
+      setEditProject(null)
+      loadPortfolio()
+    } catch (err) {
+      console.error(err)
+      alert('Failed to update project')
+    }
+  }
+
   const toggleFeatured = async (id: string) => {
     const project = projects.find(p => p.id === id)
     if (!project) return
@@ -166,8 +198,11 @@ export default function PortfolioPage() {
             <div key={project.id} className={`bg-card border rounded-lg p-6 ${project.isFeatured ? 'border-primary/30' : ''}`}>
               <div className="flex items-start justify-between mb-2">
                 <h3 className="font-semibold">{project.name}</h3>
-                <div className="flex gap-1">
+                <div className="flex gap-1 items-center">
                   {project.isFeatured && <Sparkles className="h-4 w-4 text-primary" />}
+                  <button onClick={() => setEditProject(project)} className="text-muted-foreground hover:text-primary">
+                    <Pencil className="h-4 w-4" />
+                  </button>
                   <button onClick={() => toggleFeatured(project.id)} className="text-xs text-muted-foreground hover:text-primary">
                     {project.isFeatured ? 'Unfeature' : 'Feature'}
                   </button>
@@ -205,6 +240,28 @@ export default function PortfolioPage() {
           ))
         )}
       </div>
+
+      {/* Edit Project Modal */}
+      {editProject && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setEditProject(null)}>
+          <div className="bg-card border rounded-lg p-6 w-[560px] max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold mb-4">Edit Portfolio Project</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <input placeholder="Project Name" value={editProject.name} onChange={e => setEditProject({ ...editProject, name: e.target.value })} className="px-3 py-2 rounded-md border bg-background text-sm" />
+              <input placeholder="Technologies (comma separated)" value={editProject.technologies ?? ''} onChange={e => setEditProject({ ...editProject, technologies: e.target.value })} className="px-3 py-2 rounded-md border bg-background text-sm" />
+              <input placeholder="GitHub Repo URL" value={editProject.gitHubRepoUrl ?? ''} onChange={e => setEditProject({ ...editProject, gitHubRepoUrl: e.target.value })} className="px-3 py-2 rounded-md border bg-background text-sm" />
+              <input placeholder="Deployed URL" value={editProject.deployedUrl ?? ''} onChange={e => setEditProject({ ...editProject, deployedUrl: e.target.value })} className="px-3 py-2 rounded-md border bg-background text-sm" />
+              <input placeholder="Other Link" value={editProject.link ?? ''} onChange={e => setEditProject({ ...editProject, link: e.target.value })} className="px-3 py-2 rounded-md border bg-background text-sm" />
+              <input placeholder="Screenshot URL" value={editProject.screenshotUrl ?? ''} onChange={e => setEditProject({ ...editProject, screenshotUrl: e.target.value })} className="px-3 py-2 rounded-md border bg-background text-sm" />
+              <textarea placeholder="Description" value={editProject.description ?? ''} onChange={e => setEditProject({ ...editProject, description: e.target.value })} className="px-3 py-2 rounded-md border bg-background text-sm min-h-[100px] md:col-span-2" />
+            </div>
+            <div className="mt-4 flex gap-2 justify-end">
+              <Button variant="outline" onClick={() => setEditProject(null)}>Cancel</Button>
+              <Button onClick={saveEditProject}>Save</Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
