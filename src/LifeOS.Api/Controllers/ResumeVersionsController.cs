@@ -10,7 +10,7 @@ using Microsoft.EntityFrameworkCore;
 namespace LifeOS.Api.Controllers;
 
 [ApiController]
-[Route("api/[controller]")]
+[Route("api/resume-versions")]
 [Authorize]
 public class ResumeVersionsController : ControllerBase
 {

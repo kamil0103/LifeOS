@@ -51,6 +51,15 @@ public class DocumentsController : ControllerBase
         if (request.SectionOrder != null && request.SectionOrder.Count > 0)
             data.SectionOrder = request.SectionOrder;
 
+        // Normalize nulls so QuestPDF never throws on missing data
+        data.Profile ??= new ResumeProfileDto();
+        data.Experience ??= new();
+        data.Education ??= new();
+        data.Skills ??= new();
+        data.Projects ??= new();
+        data.Certifications ??= new();
+        data.Courses ??= new();
+
         if (string.IsNullOrWhiteSpace(data.Template))
             data.Template = "harvard";
         if (data.SectionOrder == null || data.SectionOrder.Count == 0)

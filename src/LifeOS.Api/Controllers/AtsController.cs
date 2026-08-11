@@ -109,8 +109,18 @@ For recommendations, type may be skill, keyword, or note.";
             if (result?.TailoredResume == null)
                 return BadRequest(new ProblemDetails { Title = "AI returned no resume", Detail = "The AI response could not be parsed." });
 
-            // Never carry over pending recommendations into the new resume itself
-            result.TailoredResume.PendingRecommendations = new();
+            // Normalize nulls so downstream PDF generation never crashes
+            var r = result.TailoredResume;
+            r.Profile ??= new();
+            r.Experience ??= new();
+            r.Education ??= new();
+            r.Skills ??= new();
+            r.Projects ??= new();
+            r.Certifications ??= new();
+            r.Courses ??= new();
+            r.SectionOrder ??= new();
+            if (string.IsNullOrWhiteSpace(r.Template)) r.Template = "harvard";
+            r.PendingRecommendations = new(); // recommendations live in result.Recommendations only
 
             return Ok(result);
         }
