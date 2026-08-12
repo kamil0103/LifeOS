@@ -125,6 +125,10 @@ public class JobsController : ControllerBase
 
         if (job == null) return NotFound();
 
+        // Detach generated documents (cover letters, QA sheets) so the FK doesn't block deletion
+        var docs = await _context.Documents.Where(d => d.JobId == id).ToListAsync(ct);
+        foreach (var doc in docs) doc.JobId = null;
+
         _context.Jobs.Remove(job);
         await _context.SaveChangesAsync(ct);
         return NoContent();
