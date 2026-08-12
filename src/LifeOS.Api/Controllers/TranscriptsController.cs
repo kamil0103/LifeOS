@@ -269,95 +269,142 @@ public class TranscriptsController : ControllerBase
         ["F"] = 0.0,
     };
 
-    private static List<ExtractedCourseDto> ParseCoursesFromText(string text)
+    private static readonly Dictionary<string, int> GradeRank = new()
     {
-        var courses = new List<ExtractedCourseDto>();
-        
-        // Detect term headers in the full text to assign terms to courses
-        var termMatches = Regex.Matches(text, @"(Fall|Spring|Summer|Winter)\s*(Semester|Term|Session|Intersession)\s*(\d{4})", RegexOptions.IgnoreCase);
-        var termBoundaries = new List<(int Index, string Term)>();
-        foreach (Match tm in termMatches)
+        ["A+"] = 13, ["A"] = 12, ["A-"] = 11, ["B+"] = 10, ["B"] = 9, ["B-"] = 8,
+        ["C+"] = 7, ["C"] = 6, ["C-"] = 5, ["D+"] = 4, ["D"] = 3, ["D-"] = 2,
+        ["P"] = 6, ["CR"] = 6, ["F"] = 1, ["W"] = 0, ["NP"] = 0, ["NC"] = 0
+    };
+
+    private const string SuffixLetters = "ABCDHLNRSTWXYZ";
+
+    private sealed class ParsedCourse
+    {
+        public string Code = "";
+        public string Name = "";
+        public string Grade = "";
+        public string Credits = "";
+        public string? Term;
+        public int Index;
+    }
+
+    private static List<ExtractedCourseDto> ParseCoursesFromText(string rawText)
+    {
+        // Truncate legend/footer sections (grading keys, accreditation, FERPA notes)
+        var cutMarkers = new[] { "End of Transcript", "ACCREDITATION", "GRADING AND ACADEMIC RECORD", "Grading System", "THIS TRANSCRIPT IS", "Official Transcript of Academic Record" };
+        var text = rawText;
+        foreach (var marker in cutMarkers)
         {
-            termBoundaries.Add((tm.Index, $"{tm.Groups[1].Value} {tm.Groups[2].Value} {tm.Groups[3].Value}"));
+            var idx = text.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+            if (idx > 0) text = text[..idx];
         }
-        
-        // Course pattern for concatenated transcript text
-        // Code + Name(starts with uppercase) + Grade + Numbers, stopping before next code/term/end
-        var coursePattern = @"(?<![A-Z])([A-Z]{2,}\d+)([A-Z].+?)([A-FWP][+-]?)\s*([\d.]+(?:[\d.]+)*?)\s*(?=(?:[A-Z]{2,}\d+)|SEMESTER|CUMULATIVE|TERM|Dean's|In Good|\-{5,}|$)";
+
+        // Unwrap repeat/withdrawal credit markers: "[5.00]" -> "", "(4.00)" -> "4.00", "5.00R" -> "5.00"
+        text = Regex.Replace(text, @"\[\d+\.\d+\]", "");
+        text = Regex.Replace(text, @"\((\d+\.\d+)\)", "$1");
+        text = Regex.Replace(text, @"(\d\.\d{2})R(?=[A-Z]{2,})", "$1");
+
+        // Term boundaries (middle word optional: "Fall 2023" and "FallSemester2021" both work)
+        var termRegex = new Regex(@"(Fall|Spring|Summer|Winter)\s*((?:Semester|Term|Session|Intersession)\s*)?(\d{4})", RegexOptions.IgnoreCase);
+        var boundaries = new List<(int Index, string Term)>();
+        foreach (Match tm in termRegex.Matches(text))
+        {
+            var middle = tm.Groups[2].Value.Trim();
+            var termName = string.IsNullOrEmpty(middle)
+                ? $"{tm.Groups[1].Value} {tm.Groups[3].Value}"
+                : $"{tm.Groups[1].Value} {middle} {tm.Groups[3].Value}";
+            boundaries.Add((tm.Index, termName));
+        }
+
+        // Code + Name (no commas) + Grade (A-D, F, W, P — NOT E) + 1-3 decimal numbers + boundary
+        // Boundary: end, separator, CamelCase word, or all-caps word (SEMESTERTOTAL, CUMULATIVE, WINC...)
+        var coursePattern = @"(?<![A-Z])([A-Z]{2,}-?\d+)([A-Z][A-Za-z0-9 .&/+'():;-]*?)(A[+-]?|B[+-]?|C[+-]?|D[+-]?|F|W|P)(\d+\.\d+(?:\d+\.\d+){0,2})(?=$|[^A-Za-z0-9.]|[A-Z][a-z]|[A-Z]{2,})";
         var matches = Regex.Matches(text, coursePattern);
-        
+
+        var parsed = new List<ParsedCourse>();
         foreach (Match m in matches)
         {
             var code = m.Groups[1].Value;
             var name = m.Groups[2].Value.Trim();
             var grade = m.Groups[3].Value;
-            var numbers = m.Groups[4].Value.Trim();
-            
+            var numbers = m.Groups[4].Value;
+
             // Strip trailing credit numbers from name (CSUSB format: "NAME3.0003.000")
             name = Regex.Replace(name, @"\d+\.\d+(?:\d+\.\d+)*$", "").Trim();
-            
-            // Post-process: if name starts with a single-letter suffix (S=Support, L=Lab)
-            // and the remainder looks like a real word, move the suffix to the code
-            if (name.Length >= 4 && "SL".Contains(name[0]))
-            {
-                var remainder = name[1..];
-                // Heuristic: remainder should start with uppercase and contain a vowel in first 4 chars
-                var hasVowel = remainder[..Math.Min(4, remainder.Length)].Any(c => "AEIOUaeiou".Contains(c));
-                if (hasVowel)
-                {
-                    code += name[0];
-                    name = remainder;
-                }
-            }
-            
-            // Filter out non-course lines
+            if (name.Length < 2) continue;
             if (name.Contains("TOTAL", StringComparison.OrdinalIgnoreCase)) continue;
             if (name.Contains("GPA", StringComparison.OrdinalIgnoreCase)) continue;
             if (name.Contains("STANDING", StringComparison.OrdinalIgnoreCase)) continue;
             if (name.Contains("CUMULATIVE", StringComparison.OrdinalIgnoreCase)) continue;
-            if (name.Length < 2) continue;
-            
-            // Determine term by finding the nearest term boundary before this match
-            string? term = null;
-            for (int i = termBoundaries.Count - 1; i >= 0; i--)
+
+            // Rule 1: concatenated mixed-case names like "AGeneralPhysics" = code letter + real name
+            // (Cap + Cap + lowercase signature: "AGeneral", "STrigonometry", "LGENERAL" no — all-caps handled in pass 2)
+            if (name.Length >= 3 && char.IsUpper(name[0]) && char.IsUpper(name[1]) && char.IsLower(name[2]) && SuffixLetters.Contains(name[0]))
             {
-                if (termBoundaries[i].Index < m.Index)
-                {
-                    term = termBoundaries[i].Term;
-                    break;
-                }
+                code += name[0];
+                name = name[1..];
             }
-            
-            // Calculate credits from last number (points) and grade
+
+            // Determine term from nearest preceding boundary
+            string? term = null;
+            for (int i = boundaries.Count - 1; i >= 0; i--)
+            {
+                if (boundaries[i].Index < m.Index) { term = boundaries[i].Term; break; }
+            }
+
+            // Credits from last number (quality points) divided by grade value
             var lastNumberMatch = Regex.Match(numbers, @"(\d+\.\d+)$");
             if (!lastNumberMatch.Success) continue;
-            
-            var pointsStr = lastNumberMatch.Groups[1].Value;
-            if (!double.TryParse(pointsStr, out var points)) continue;
-            
+            if (!double.TryParse(lastNumberMatch.Groups[1].Value, out var points)) continue;
+
             string credits;
             if (GradeValues.TryGetValue(grade, out var gradeVal) && gradeVal > 0)
             {
-                var cred = points / gradeVal;
-                cred = Math.Round(cred * 2) / 2;
+                var cred = Math.Round(points / gradeVal * 2) / 2;
                 credits = $"{cred:F2}";
             }
             else
             {
                 credits = points.ToString("F2");
             }
-            
-            courses.Add(new ExtractedCourseDto
-            {
-                Code = code,
-                Name = name,
-                Grade = grade,
-                Credits = credits,
-                Term = term
-            });
+
+            parsed.Add(new ParsedCourse { Code = code, Name = name, Grade = grade, Credits = credits, Term = term, Index = m.Index });
         }
-        
-        return courses;
+
+        // Pass 2 (group-based suffix for ALL-CAPS names): if a base-code group has multiple
+        // DISTINCT names, the leading letter is a code suffix/section (e.g., PHYS2500 + PHYS2500L)
+        foreach (var g in parsed.GroupBy(c => c.Code.Replace("-", "").ToUpperInvariant()).ToList())
+        {
+            if (g.Select(c => c.Name).Distinct().Count() < 2) continue;
+            foreach (var c in g)
+            {
+                if (c.Name.Length >= 4 && SuffixLetters.Contains(c.Name[0]) && char.IsUpper(c.Name[1]))
+                {
+                    c.Code += c.Name[0];
+                    c.Name = c.Name[1..];
+                }
+            }
+        }
+
+        // Dedup repeats: same normalized code + name, keep highest grade (C retake beats D, etc.)
+        var best = new Dictionary<string, ParsedCourse>();
+        foreach (var c in parsed)
+        {
+            var key = c.Code.Replace("-", "").ToUpperInvariant() + "|" + c.Name.Replace(" ", "").ToUpperInvariant();
+            if (!best.TryGetValue(key, out var existing))
+                best[key] = c;
+            else if (GradeRank.GetValueOrDefault(c.Grade, 0) > GradeRank.GetValueOrDefault(existing.Grade, 0))
+                best[key] = c;
+        }
+
+        return best.Values.OrderBy(c => c.Index).Select(c => new ExtractedCourseDto
+        {
+            Code = c.Code,
+            Name = c.Name,
+            Grade = c.Grade,
+            Credits = c.Credits,
+            Term = c.Term
+        }).ToList();
     }
 
     private static string CleanupJsonResponse(string response)
