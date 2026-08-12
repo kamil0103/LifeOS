@@ -321,15 +321,21 @@ public class TranscriptsController : ControllerBase
         // Boundary: end, separator, CamelCase word, or all-caps word (SEMESTERTOTAL, CUMULATIVE, WINC...)
         var coursePattern = @"(?<![A-Z])([A-Z]{2,}-?\d+)([A-Z][A-Za-z0-9 .&/+'():;-]*?)(A[+-]?|B[+-]?|C[+-]?|D[+-]?|F|W|P)(\d+\.\d+(?:\d+\.\d+){0,2})(?=$|[^A-Za-z0-9.]|[A-Z][a-z]|[A-Z]{2,})";
 
-        // Format 2 (space-separated: CSUF style): "ACCT 301A Intermediate Accounting  3.0  C  6.0"
+        // Format 2 (space-separated, units-first: CSUF style): "ACCT 301A Intermediate Accounting  3.0  C  6.0"
         var spacedPattern = @"(?<![A-Z])([A-Z]{2,5})\s+(\d{3,4}[A-Z]?)\s+([A-Z][A-Za-z0-9 .&/+'():;-]*?)\s+\(?(\d+\.\d)\)?\s+(A[+-]?|B[+-]?|C[+-]?|D[+-]?|F|CR|NC|NP|IP|WU|SP|RP|RD|AU|W|P|I)\s+(\d+\.\d)";
 
-        // Collect raw matches from both formats, ordered by position
+        // Format 3 (space-separated, grade-first: unofficial El Camino self-service style):
+        // "COMS 120 Argumentation and Debate  A  3.0  3.0  12.0" (grade BEFORE units)
+        var gradeFirstPattern = @"(?<![A-Z])([A-Z]{2,5})\s+(\d{1,4}[A-Z]?)\s+([A-Z][A-Za-z0-9 .&/+'():;-]*?)\s+(A[+-]?|B[+-]?|C[+-]?|D[+-]?|F|CR|NC|NP|IP|WU|SP|RP|RD|AU|W|P|I)\s+(\d+\.\d)\s+(\d+\.\d)\s+(\d+\.\d)";
+
+        // Collect raw matches from all three formats, ordered by position
         var rawMatches = new List<(int Index, string Code, string Name, string Grade, string Numbers, string? Units)>();
         foreach (Match m in Regex.Matches(text, coursePattern))
             rawMatches.Add((m.Index, m.Groups[1].Value, m.Groups[2].Value, m.Groups[3].Value, m.Groups[4].Value, null));
         foreach (Match m in Regex.Matches(text, spacedPattern))
             rawMatches.Add((m.Index, $"{m.Groups[1].Value} {m.Groups[2].Value}", m.Groups[3].Value, m.Groups[5].Value, m.Groups[6].Value, m.Groups[4].Value));
+        foreach (Match m in Regex.Matches(text, gradeFirstPattern))
+            rawMatches.Add((m.Index, $"{m.Groups[1].Value} {m.Groups[2].Value}", m.Groups[3].Value, m.Groups[4].Value, m.Groups[7].Value, m.Groups[5].Value));
         rawMatches = rawMatches.OrderBy(r => r.Index).ToList();
 
         var parsed = new List<ParsedCourse>();
