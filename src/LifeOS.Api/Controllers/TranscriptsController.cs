@@ -233,7 +233,7 @@ public class TranscriptsController : ControllerBase
     private async Task<ExtractedTranscriptDto?> ExtractFromText(string text, CancellationToken ct)
     {
         var truncatedText = text.Length > 8000 ? text.Substring(0, 8000) : text;
-        
+
         // Step 1: AI extracts institution and degree (small JSON, always fits in token limit)
         var metaSystemPrompt = "You are an academic transcript parser. Extract only the institution and degree metadata.";
         var metaUserPrompt = $"From this transcript text, extract the institution name, type, location, degree name, field, GPA, and honors. Return compact JSON:\n\nTRANSCRIPT TEXT:\n---\n{truncatedText}\n---\n\nReturn ONLY this JSON (use empty strings if not found):\n{{\"institution\":{{\"name\":\"...\",\"type\":\"university|community_college|other\",\"location\":\"...\"}},\"degree\":{{\"name\":\"...\",\"field\":\"...\",\"type\":\"bachelors|masters|associates|certificate|other\",\"gpa\":\"...\",\"honors\":\"...\"}}}}";
@@ -253,11 +253,132 @@ public class TranscriptsController : ControllerBase
 
         metaResult ??= new ExtractedTranscriptDto();
 
-        // Step 2: Parse courses locally with regex (reliable, no token limits)
-        var courses = ParseCoursesFromText(text);
-        metaResult.Courses = courses;
+        // Step 2: Universal course extraction — chunked AI works with ANY transcript format.
+        // Each chunk is small (one term / ~2000 chars) so responses never hit token limits,
+        // and JsonRepair (in the providers) fixes any truncated JSON.
+        var chunks = SplitIntoChunks(text);
+        _logger.LogInformation("Split transcript into {Count} chunks for AI extraction", chunks.Count);
+
+        var chunkTasks = chunks.Select(c => ExtractCoursesFromChunkAsync(c, ct)).ToList();
+        var chunkResults = await Task.WhenAll(chunkTasks);
+
+        var allCourses = new List<ExtractedCourseDto>();
+        foreach (var result in chunkResults)
+        {
+            if (result != null) allCourses.AddRange(result);
+        }
+        _logger.LogInformation("AI extracted {Count} courses across {Chunks} chunks", allCourses.Count, chunks.Count);
+
+        // Fallback: regex parser if AI returned nothing
+        if (allCourses.Count == 0)
+        {
+            _logger.LogInformation("AI course extraction returned 0 courses; falling back to regex parser");
+            allCourses = ParseCoursesFromText(text);
+        }
+
+        // Step 3: Dedup repeats — same normalized code + name, keep highest grade
+        metaResult.Courses = DedupCourses(allCourses);
 
         return metaResult;
+    }
+
+    /// <summary>
+    /// Split transcript text into chunks at term boundaries. Falls back to ~2000-char
+    /// chunks split at whitespace when no term headers are found.
+    /// </summary>
+    private static List<string> SplitIntoChunks(string text)
+    {
+        var termRegex = new Regex(@"(Fall|Spring|Summer|Winter)\s*((?:Semester|Term|Session|Intersession|Quarter)\s*)?(19|20)\d{2}", RegexOptions.IgnoreCase);
+        var matches = termRegex.Matches(text);
+
+        var chunks = new List<string>();
+        if (matches.Count >= 2)
+        {
+            for (int i = 0; i < matches.Count; i++)
+            {
+                var start = matches[i].Index;
+                var end = i + 1 < matches.Count ? matches[i + 1].Index : text.Length;
+                var chunk = text[start..end].Trim();
+                if (chunk.Length > 30) chunks.Add(chunk);
+            }
+        }
+        else
+        {
+            // No term headers — fixed-size chunks at whitespace boundaries
+            const int size = 2000;
+            for (int i = 0; i < text.Length; i += size)
+            {
+                var end = Math.Min(i + size, text.Length);
+                if (end < text.Length)
+                {
+                    var lastSpace = text.LastIndexOf(' ', end, Math.Min(size - 1, end - i));
+                    if (lastSpace > i) end = lastSpace;
+                }
+                var chunk = text[i..end].Trim();
+                if (chunk.Length > 30) chunks.Add(chunk);
+                if (end <= i) break;
+                i = end - 1; // for-loop increments
+            }
+        }
+        return chunks;
+    }
+
+    private async Task<List<ExtractedCourseDto>?> ExtractCoursesFromChunkAsync(string chunk, CancellationToken ct)
+    {
+        var systemPrompt = "You are an academic transcript parser. You extract every course row from transcript text regardless of layout or spacing. You never invent courses.";
+        var userPrompt = $@"Extract ALL courses from this transcript section. The text may come from any school's transcript — columns may be concatenated or space-separated, grades may appear before or after units, there may be extra columns (GE codes, footnotes, GPA) — parse intelligently.
+
+TRANSCRIPT SECTION:
+---
+{chunk}
+---
+
+Return ONLY a JSON array (no markdown, no commentary):
+[{{""code"":""<course code like 'COMS 120' or 'CSE2130'>"",""name"":""<course title>"",""grade"":""<letter grade like A, B+, C-, P, W, F>"",""credits"":""<units like 3.0>"",""term"":""<term header from this section, e.g. 'Fall Semester 2021'>""}}]
+
+Rules:
+- Include EVERY course row, even repeated or withdrawn courses.
+- credits = the course's units (attempted value).
+- term = copy the term header text exactly as shown in this section (e.g. 'Summer Term 2021', 'Fall 2023').
+- Ignore totals/summary/GPA lines, headers, and footnotes.
+- If this section contains no course rows, return [].";
+
+        try
+        {
+            var json = await _aiProvider.CompleteJsonAsync(systemPrompt, userPrompt, ct);
+            var cleaned = CleanupJsonResponse(json);
+
+            // Response may be a bare array — wrap if needed for repair tolerance
+            var courses = JsonSerializer.Deserialize<List<ExtractedCourseDto>>(cleaned, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            return courses?.Where(c => !string.IsNullOrWhiteSpace(c.Name)).ToList() ?? new List<ExtractedCourseDto>();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "AI chunk extraction failed (chunk length {Length}), skipping chunk", chunk.Length);
+            return null;
+        }
+    }
+
+    private static List<ExtractedCourseDto> DedupCourses(List<ExtractedCourseDto> courses)
+    {
+        var best = new Dictionary<string, ExtractedCourseDto>();
+        var order = new List<string>();
+        foreach (var c in courses)
+        {
+            var key = (c.Code ?? "").Replace("-", "").Replace(" ", "").ToUpperInvariant()
+                + "|" + c.Name.Replace(" ", "").ToUpperInvariant();
+
+            if (!best.TryGetValue(key, out var existing))
+            {
+                best[key] = c;
+                order.Add(key);
+            }
+            else if (GradeRank.GetValueOrDefault(c.Grade ?? "", 0) > GradeRank.GetValueOrDefault(existing.Grade ?? "", 0))
+            {
+                best[key] = c;
+            }
+        }
+        return order.Select(k => best[k]).ToList();
     }
 
     private static readonly Dictionary<string, double> GradeValues = new()
@@ -433,22 +554,33 @@ public class TranscriptsController : ControllerBase
     private static string CleanupJsonResponse(string response)
     {
         var cleaned = response.Trim();
-        
+
         // Remove markdown code blocks
         if (cleaned.StartsWith("```json")) cleaned = cleaned[7..];
         else if (cleaned.StartsWith("```")) cleaned = cleaned[3..];
         if (cleaned.EndsWith("```")) cleaned = cleaned[..^3];
-        
+
         cleaned = cleaned.Trim();
-        
-        // Extract just the JSON object - find first { and last }
+
+        // Extract the JSON payload — handle both objects {...} and arrays [...]
         var firstBrace = cleaned.IndexOf('{');
-        var lastBrace = cleaned.LastIndexOf('}');
-        if (firstBrace >= 0 && lastBrace > firstBrace)
+        var firstBracket = cleaned.IndexOf('[');
+        int start;
+        if (firstBrace < 0) start = firstBracket;
+        else if (firstBracket < 0) start = firstBrace;
+        else start = Math.Min(firstBrace, firstBracket);
+
+        if (start >= 0)
         {
-            cleaned = cleaned[firstBrace..(lastBrace + 1)];
+            var openChar = cleaned[start];
+            var closeChar = openChar == '{' ? '}' : ']';
+            var end = cleaned.LastIndexOf(closeChar);
+            if (end > start)
+            {
+                cleaned = cleaned[start..(end + 1)];
+            }
         }
-        
+
         return cleaned;
     }
 
