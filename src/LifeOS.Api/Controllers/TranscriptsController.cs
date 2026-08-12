@@ -343,20 +343,29 @@ Rules:
 - Ignore totals/summary/GPA lines, headers, and footnotes.
 - If this section contains no course rows, return [].";
 
-        try
+        for (int attempt = 1; attempt <= 2; attempt++)
         {
-            var json = await _aiProvider.CompleteJsonAsync(systemPrompt, userPrompt, ct);
-            var cleaned = CleanupJsonResponse(json);
+            try
+            {
+                var json = await _aiProvider.CompleteJsonAsync(systemPrompt, userPrompt, ct);
+                var cleaned = CleanupJsonResponse(json);
 
-            // Response may be a bare array — wrap if needed for repair tolerance
-            var courses = JsonSerializer.Deserialize<List<ExtractedCourseDto>>(cleaned, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-            return courses?.Where(c => !string.IsNullOrWhiteSpace(c.Name)).ToList() ?? new List<ExtractedCourseDto>();
+                var courses = JsonSerializer.Deserialize<List<ExtractedCourseDto>>(cleaned, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                var valid = courses?.Where(c => !string.IsNullOrWhiteSpace(c.Name)).ToList() ?? new List<ExtractedCourseDto>();
+                return valid;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "AI chunk extraction attempt {Attempt} failed (chunk length {Length}). Raw response logged.", attempt, chunk.Length);
+                if (attempt == 2)
+                {
+                    _logger.LogWarning("Chunk extraction failed after retry. Chunk preview: {Preview}", chunk.Substring(0, Math.Min(200, chunk.Length)));
+                    return null;
+                }
+                await Task.Delay(500, ct); // brief pause before retry
+            }
         }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "AI chunk extraction failed (chunk length {Length}), skipping chunk", chunk.Length);
-            return null;
-        }
+        return null;
     }
 
     private static List<ExtractedCourseDto> DedupCourses(List<ExtractedCourseDto> courses)
