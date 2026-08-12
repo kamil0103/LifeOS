@@ -316,18 +316,29 @@ public class TranscriptsController : ControllerBase
             boundaries.Add((tm.Index, termName));
         }
 
+        // Format 1 (concatenated: El Camino / CSUSB style):
         // Code + Name (no commas) + Grade (A-D, F, W, P — NOT E) + 1-3 decimal numbers + boundary
         // Boundary: end, separator, CamelCase word, or all-caps word (SEMESTERTOTAL, CUMULATIVE, WINC...)
         var coursePattern = @"(?<![A-Z])([A-Z]{2,}-?\d+)([A-Z][A-Za-z0-9 .&/+'():;-]*?)(A[+-]?|B[+-]?|C[+-]?|D[+-]?|F|W|P)(\d+\.\d+(?:\d+\.\d+){0,2})(?=$|[^A-Za-z0-9.]|[A-Z][a-z]|[A-Z]{2,})";
-        var matches = Regex.Matches(text, coursePattern);
+
+        // Format 2 (space-separated: CSUF style): "ACCT 301A Intermediate Accounting  3.0  C  6.0"
+        var spacedPattern = @"(?<![A-Z])([A-Z]{2,5})\s+(\d{3,4}[A-Z]?)\s+([A-Z][A-Za-z0-9 .&/+'():;-]*?)\s+\(?(\d+\.\d)\)?\s+(A[+-]?|B[+-]?|C[+-]?|D[+-]?|F|CR|NC|NP|IP|WU|SP|RP|RD|AU|W|P|I)\s+(\d+\.\d)";
+
+        // Collect raw matches from both formats, ordered by position
+        var rawMatches = new List<(int Index, string Code, string Name, string Grade, string Numbers, string? Units)>();
+        foreach (Match m in Regex.Matches(text, coursePattern))
+            rawMatches.Add((m.Index, m.Groups[1].Value, m.Groups[2].Value, m.Groups[3].Value, m.Groups[4].Value, null));
+        foreach (Match m in Regex.Matches(text, spacedPattern))
+            rawMatches.Add((m.Index, $"{m.Groups[1].Value} {m.Groups[2].Value}", m.Groups[3].Value, m.Groups[5].Value, m.Groups[6].Value, m.Groups[4].Value));
+        rawMatches = rawMatches.OrderBy(r => r.Index).ToList();
 
         var parsed = new List<ParsedCourse>();
-        foreach (Match m in matches)
+        foreach (var m in rawMatches)
         {
-            var code = m.Groups[1].Value;
-            var name = m.Groups[2].Value.Trim();
-            var grade = m.Groups[3].Value;
-            var numbers = m.Groups[4].Value;
+            var code = m.Code;
+            var name = m.Name.Trim();
+            var grade = m.Grade;
+            var numbers = m.Numbers;
 
             // Strip trailing credit numbers from name (CSUSB format: "NAME3.0003.000")
             name = Regex.Replace(name, @"\d+\.\d+(?:\d+\.\d+)*$", "").Trim();
@@ -352,7 +363,13 @@ public class TranscriptsController : ControllerBase
                 if (boundaries[i].Index < m.Index) { term = boundaries[i].Term; break; }
             }
 
-            // Credits from last number (quality points) divided by grade value
+            // Credits: spaced format provides units directly; concatenated derives from quality points / grade value
+            if (m.Units != null)
+            {
+                parsed.Add(new ParsedCourse { Code = code, Name = name, Grade = grade, Credits = m.Units, Term = term, Index = m.Index });
+                continue;
+            }
+
             var lastNumberMatch = Regex.Match(numbers, @"(\d+\.\d+)$");
             if (!lastNumberMatch.Success) continue;
             if (!double.TryParse(lastNumberMatch.Groups[1].Value, out var points)) continue;
@@ -390,7 +407,7 @@ public class TranscriptsController : ControllerBase
         var best = new Dictionary<string, ParsedCourse>();
         foreach (var c in parsed)
         {
-            var key = c.Code.Replace("-", "").ToUpperInvariant() + "|" + c.Name.Replace(" ", "").ToUpperInvariant();
+            var key = c.Code.Replace("-", "").Replace(" ", "").ToUpperInvariant() + "|" + c.Name.Replace(" ", "").ToUpperInvariant();
             if (!best.TryGetValue(key, out var existing))
                 best[key] = c;
             else if (GradeRank.GetValueOrDefault(c.Grade, 0) > GradeRank.GetValueOrDefault(existing.Grade, 0))

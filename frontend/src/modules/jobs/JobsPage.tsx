@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import api from '@/lib/api'
 import { Button } from '@/components/ui/button'
-import { Loader2, Plus, Trash2, ExternalLink, Sparkles, Search, Save, Rss, Target, MessageSquare, X, Briefcase, Pencil } from 'lucide-react'
+import { Loader2, Plus, Trash2, ExternalLink, Sparkles, Search, Save, Rss, Target, MessageSquare, X, Briefcase, Pencil, FileText } from 'lucide-react'
 
 interface Job {
   id: string
@@ -112,6 +112,28 @@ export default function JobsPage() {
       console.error(err)
     } finally {
       setIsDiscovering(false)
+    }
+  }
+
+  const [coverLetterJobId, setCoverLetterJobId] = useState<string | null>(null)
+
+  const generateCoverLetter = async (jobId: string) => {
+    setCoverLetterJobId(jobId)
+    try {
+      const response = await api.post('/documents/cover-letter/ai', { jobId }, { responseType: 'blob' })
+      const job = savedJobs.find(j => j.id === jobId)
+      const blob = new Blob([response.data], { type: 'application/pdf' })
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `cover_letter_${job?.company || 'job'}.pdf`
+      a.click()
+      window.URL.revokeObjectURL(url)
+    } catch (err: any) {
+      console.error(err)
+      alert(err?.response?.data?.detail || 'Cover letter generation failed')
+    } finally {
+      setCoverLetterJobId(null)
     }
   }
 
@@ -452,6 +474,11 @@ export default function JobsPage() {
                   </button>
                   <button onClick={() => generateInterviewQa(job.id)} disabled={analyzingId === job.id} title="Interview Q&A" className="text-white/20 hover:text-blue-400 transition-colors">
                     <MessageSquare className={`h-4 w-4 ${analyzingId === job.id ? 'animate-pulse' : ''}`} />
+                  </button>
+                  <button onClick={() => generateCoverLetter(job.id)} disabled={coverLetterJobId === job.id} title="AI Cover Letter" className="text-white/20 hover:text-green-400 transition-colors">
+                    {coverLetterJobId === job.id
+                      ? <Loader2 className="h-4 w-4 animate-spin" />
+                      : <FileText className="h-4 w-4" />}
                   </button>
                   <button onClick={() => analyzeJob(job.id)} disabled={analyzingId === job.id} title="AI Analysis" className="text-white/20 hover:text-blue-400 transition-colors">
                     <Sparkles className={`h-4 w-4 ${analyzingId === job.id ? 'animate-pulse' : ''}`} />

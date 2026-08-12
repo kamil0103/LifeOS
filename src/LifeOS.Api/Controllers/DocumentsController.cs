@@ -1,4 +1,5 @@
 using System.Net.Mime;
+using System.Text.Json;
 using LifeOS.Application.DTOs.Documents;
 using LifeOS.Application.Interfaces;
 using LifeOS.Domain.Entities;
@@ -19,19 +20,22 @@ public class DocumentsController : ControllerBase
     private readonly IResumeGenerator _resumeGenerator;
     private readonly IResumeDataBuilder _resumeDataBuilder;
     private readonly IDocumentStorage _documentStorage;
+    private readonly IAiProvider _aiProvider;
 
     public DocumentsController(
         AppDbContext context,
         ICurrentUserService currentUser,
         IResumeGenerator resumeGenerator,
         IResumeDataBuilder resumeDataBuilder,
-        IDocumentStorage documentStorage)
+        IDocumentStorage documentStorage,
+        IAiProvider aiProvider)
     {
         _context = context;
         _currentUser = currentUser;
         _resumeGenerator = resumeGenerator;
         _resumeDataBuilder = resumeDataBuilder;
         _documentStorage = documentStorage;
+        _aiProvider = aiProvider;
     }
 
     private Guid GetUserId()
@@ -118,6 +122,59 @@ public class DocumentsController : ControllerBase
         if (job == null)
             return BadRequest(new ProblemDetails { Title = "Job not found", Detail = "The specified job does not exist or does not belong to you." });
 
+        var opening = request.Opening;
+        var body = request.Body;
+        var closing = request.Closing;
+
+        // Generate content with AI when not provided
+        if (string.IsNullOrWhiteSpace(opening) || string.IsNullOrWhiteSpace(body) || string.IsNullOrWhiteSpace(closing))
+        {
+            var skills = await _context.Skills.AsNoTracking().Where(s => s.UserId == userId).Select(s => s.Name).ToListAsync(ct);
+            var experiences = await _context.WorkExperiences.AsNoTracking().Where(e => e.UserId == userId)
+                .Select(e => e.Title + " at " + e.Company + ": " + e.Bullets).ToListAsync(ct);
+            var education = await _context.Degrees.AsNoTracking().Include(d => d.Institution).Where(d => d.UserId == userId)
+                .Select(d => d.DegreeName + " - " + (d.Institution != null ? d.Institution.Name : "")).ToListAsync(ct);
+
+            var systemPrompt = "You are an expert cover letter writer following Harvard Career Services guidelines. You write concise, factual, tailored letters using only the candidate's real data — never inventing experience or skills.";
+            var userPrompt = $@"Write a cover letter for this candidate and job. Harvard guidelines: address why you're a fit, highlight 1-2 key relevant examples (don't repeat the whole resume), confident tone, no flowery language, minimal use of 'I', plenty of action words, max one page.
+
+CANDIDATE:
+Name: {profile?.FullName ?? "Candidate"}
+Summary: {profile?.Summary ?? ""}
+Target Roles: {profile?.TargetRoles ?? ""}
+Skills: {string.Join(", ", skills)}
+Experience: {string.Join(" | ", experiences)}
+Education: {string.Join(" | ", education)}
+
+JOB:
+Title: {job.Title}
+Company: {job.Company}
+Description: {job.Description ?? "(no description)"}
+
+Return ONLY valid JSON:
+{{
+  ""opening"": ""<opening paragraph: state the position, why writing, 3 quick reasons for fit>"",
+  ""body"": ""<1-2 middle paragraphs: relevant experience with concrete examples from the candidate's real history, tied to the job's needs>"",
+  ""closing"": ""<closing paragraph: reiterate interest, thank reader, look forward to discussing>""
+}}";
+
+            try
+            {
+                var json = await _aiProvider.CompleteJsonAsync(systemPrompt, userPrompt, ct);
+                var generated = JsonSerializer.Deserialize<CoverLetterAiContent>(json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                if (generated != null)
+                {
+                    opening ??= generated.Opening;
+                    body ??= generated.Body;
+                    closing ??= generated.Closing;
+                }
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new ProblemDetails { Title = "AI cover letter generation failed", Detail = ex.Message });
+            }
+        }
+
         var data = new CoverLetterDataDto
         {
             Name = profile?.FullName ?? "",
@@ -129,9 +186,9 @@ public class DocumentsController : ControllerBase
             Company = job.Company ?? "",
             JobTitle = job.Title ?? "",
             Date = DateTimeOffset.UtcNow.ToString("MMMM d, yyyy"),
-            Opening = request.Opening ?? "",
-            Body = request.Body ?? "",
-            Closing = request.Closing ?? ""
+            Opening = opening ?? "",
+            Body = body ?? "",
+            Closing = closing ?? ""
         };
 
         var pdfBytes = await _resumeGenerator.GenerateCoverLetterPdfAsync(data, ct);
@@ -230,4 +287,11 @@ public class GenerateCoverLetterAiRequest
     public string? Opening { get; set; }
     public string? Body { get; set; }
     public string? Closing { get; set; }
+}
+
+public class CoverLetterAiContent
+{
+    public string Opening { get; set; } = string.Empty;
+    public string Body { get; set; } = string.Empty;
+    public string Closing { get; set; } = string.Empty;
 }
