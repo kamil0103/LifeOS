@@ -133,9 +133,15 @@ export default function EducationPage() {
   const saveCourse = async () => {
     if (!editCourse || !editCourse.name) return
     try {
+      // If a degree is chosen, align institution to that degree's institution
+      let institutionId = editCourse.institutionId ?? null
+      if (editCourse.degreeId) {
+        const parentDegree = institutions.flatMap(i => i.degrees).find(d => d.id === editCourse.degreeId)
+        if (parentDegree?.institutionId) institutionId = parentDegree.institutionId
+      }
       await api.put(`/education/courses/${editCourse.id}`, {
         degreeId: editCourse.degreeId ?? null,
-        institutionId: editCourse.institutionId ?? null,
+        institutionId,
         code: editCourse.code,
         name: editCourse.name,
         grade: editCourse.grade,
@@ -613,9 +619,24 @@ export default function EducationPage() {
                 <input type="number" step="0.5" placeholder="Credits" value={editCourse.credits ?? ''} onChange={e => setEditCourse({ ...editCourse, credits: e.target.value ? parseFloat(e.target.value) : undefined })} className="px-4 py-2.5 rounded-lg border border-white/10 bg-white/5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40" />
                 <input type="text" placeholder="Term (e.g. Fall 2023)" value={editCourse.term ?? ''} onChange={e => setEditCourse({ ...editCourse, term: e.target.value })} className="px-4 py-2.5 rounded-lg border border-white/10 bg-white/5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40" />
               </div>
+              <div>
+                <label className="text-xs text-white/40 mb-1 block">Assign to Degree</label>
+                <select
+                  value={editCourse.degreeId ?? ''}
+                  onChange={e => setEditCourse({ ...editCourse, degreeId: e.target.value || undefined })}
+                  className="w-full px-4 py-2.5 rounded-lg border border-white/10 bg-white/5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                >
+                  <option value="">Unassigned (no degree)</option>
+                  {institutions.flatMap(inst =>
+                    inst.degrees.map(deg => (
+                      <option key={deg.id} value={deg.id}>{deg.degreeName} — {inst.name}</option>
+                    ))
+                  )}
+                </select>
+              </div>
               <label className="flex items-center gap-2 text-sm text-white/60">
                 <input type="checkbox" checked={editCourse.isMajorRelated} onChange={e => setEditCourse({ ...editCourse, isMajorRelated: e.target.checked })} className="h-4 w-4" />
-                Major-related
+                Major-related (shows in resume Relevant Coursework)
               </label>
             </div>
             <div className="flex gap-2 mt-5 justify-end">

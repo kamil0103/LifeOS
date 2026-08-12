@@ -81,10 +81,24 @@ public class EducationController : ControllerBase
     {
         var userId = GetUserId();
         var institution = await _context.Institutions
+            .Include(i => i.Degrees)
+            .Include(i => i.UnassignedCourses)
             .FirstOrDefaultAsync(i => i.Id == id && i.UserId == userId, ct);
 
         if (institution == null) return NotFound();
 
+        // Remove unassigned courses and degrees' courses explicitly to avoid FK violations
+        var degrees = await _context.Degrees
+            .Include(d => d.Courses)
+            .Where(d => d.InstitutionId == id && d.UserId == userId)
+            .ToListAsync(ct);
+
+        foreach (var degree in degrees)
+        {
+            _context.Courses.RemoveRange(degree.Courses);
+        }
+        _context.Courses.RemoveRange(institution.UnassignedCourses);
+        _context.Degrees.RemoveRange(degrees);
         _context.Institutions.Remove(institution);
         await _context.SaveChangesAsync(ct);
         return NoContent();

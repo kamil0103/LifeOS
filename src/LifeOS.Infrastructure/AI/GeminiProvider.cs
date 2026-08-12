@@ -96,7 +96,8 @@ public class GeminiProvider : IAiProvider
             
             // Fallback: call without JSON mode
             var enhancedPrompt = userPrompt + "\n\nRespond ONLY with valid JSON. Do not include markdown formatting, backticks, or explanatory text.";
-            return await CompleteAsync(systemPrompt, enhancedPrompt, ct);
+            var fallback = await CompleteAsync(systemPrompt, enhancedPrompt, ct);
+            return JsonRepair.CleanAndRepair(fallback);
         }
 
         using var doc = JsonDocument.Parse(responseJson);
@@ -110,7 +111,7 @@ public class GeminiProvider : IAiProvider
         var result = text ?? string.Empty;
         _logger.LogInformation("Gemini JSON response length: {Length}", result.Length);
         _logger.LogDebug("Gemini JSON raw response: {Response}", result.Substring(0, Math.Min(500, result.Length)));
-        
-        return result.Trim();
+
+        return JsonRepair.CleanAndRepair(result);
     }
 }

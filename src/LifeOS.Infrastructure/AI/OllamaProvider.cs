@@ -76,11 +76,6 @@ public class OllamaProvider : IAiProvider
         var enhancedPrompt = userPrompt + "\n\nRespond ONLY with valid JSON. Do not include markdown formatting, backticks, or explanatory text.";
         var result = await CompleteAsync(systemPrompt, enhancedPrompt, ct);
         
-        result = result.Trim();
-        if (result.StartsWith("```json")) result = result[7..];
-        if (result.StartsWith("```")) result = result[3..];
-        if (result.EndsWith("```")) result = result[..^3];
-        
-        return result.Trim();
+        return JsonRepair.CleanAndRepair(result);
     }
 }
