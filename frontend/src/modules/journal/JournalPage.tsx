@@ -32,7 +32,7 @@ export default function JournalPage() {
   const [form, setForm] = useState({ title: '', content: '', entryDate: '', mood: '' })
 
   const [showSettings, setShowSettings] = useState(false)
-  const [settingsForm, setSettingsForm] = useState({ googleDocId: '', serviceAccountJson: '', autoSync: false })
+  const [settingsForm, setSettingsForm] = useState({ googleDocId: '', autoSync: false })
   const [syncStatus, setSyncStatus] = useState<{ ok: boolean; msg: string } | null>(null)
   const [isSyncing, setIsSyncing] = useState(false)
   const [isTesting, setIsTesting] = useState(false)
@@ -106,7 +106,6 @@ export default function JournalPage() {
     try {
       const { data } = await api.put('/journal/settings', settingsForm)
       setSettings(data)
-      setSettingsForm(f => ({ ...f, serviceAccountJson: '' }))
       setSyncStatus({ ok: true, msg: 'Settings saved' })
     } catch (err: any) {
       setSyncStatus({ ok: false, msg: err?.response?.data?.detail || 'Failed to save settings' })
@@ -245,20 +244,18 @@ export default function JournalPage() {
 
             {/* How-to guide */}
             <div className="bg-secondary/40 rounded-md p-4 mb-5 text-sm space-y-2">
-              <p className="font-medium">One-time setup (~5 minutes):</p>
+              <p className="font-medium">Quick setup (~1 minute):</p>
               <ol className="list-decimal pl-5 space-y-1.5 text-muted-foreground">
-                <li>Go to <a href="https://console.cloud.google.com" target="_blank" rel="noopener noreferrer" className="text-primary underline">Google Cloud Console</a> → create a project (or pick an existing one).</li>
-                <li>Enable the <strong>Google Docs API</strong> (APIs &amp; Services → Library → search "Google Docs API" → Enable).</li>
-                <li>Go to <strong>IAM &amp; Admin → Service Accounts</strong> → Create Service Account → name it e.g. <code>lifeos-journal</code>.</li>
-                <li>On the service account → <strong>Keys</strong> → Add Key → Create new key → <strong>JSON</strong> → download the file.</li>
-                <li>Create a new <a href="https://docs.google.com" target="_blank" rel="noopener noreferrer" className="text-primary underline">Google Doc</a> (this is your backup doc).</li>
-                <li>In the Doc, click <strong>Share</strong> → paste the service account's <strong>email</strong> (looks like <code>name@project.iam.gserviceaccount.com</code>) → give <strong>Editor</strong> access.</li>
-                <li>Copy the Doc's <strong>ID</strong> from its URL (the long string between <code>/d/</code> and <code>/edit</code>).</li>
-                <li>Paste the <strong>Doc ID</strong> and the full contents of the downloaded <strong>JSON key file</strong> below.</li>
+                <li>Create a new <a href="https://docs.google.com" target="_blank" rel="noopener noreferrer" className="text-primary underline">Google Doc</a> — this is where your journal gets backed up.</li>
+                <li>In the Doc, click <strong>Share</strong> → add this email with <strong>Editor</strong> access:
+                  {settings?.serviceAccountEmail ? (
+                    <code className="block mt-1 px-2 py-1.5 bg-background rounded text-primary text-xs select-all break-all">{settings.serviceAccountEmail}</code>
+                  ) : (
+                    <span className="block mt-1 text-amber-500 text-xs">(service account not configured on server)</span>
+                  )}
+                </li>
+                <li>Copy the Doc's <strong>ID</strong> from its URL — the long string between <code>/d/</code> and <code>/edit</code> — and paste it below.</li>
               </ol>
-              {settings?.serviceAccountEmail && (
-                <p className="text-xs pt-1">Connected service account: <code className="text-primary">{settings.serviceAccountEmail}</code></p>
-              )}
             </div>
 
             <div className="space-y-3">
@@ -270,17 +267,6 @@ export default function JournalPage() {
                   value={settingsForm.googleDocId}
                   onChange={e => setSettingsForm({ ...settingsForm, googleDocId: e.target.value.trim() })}
                   className="w-full px-3 py-2 rounded-md border bg-background text-sm font-mono"
-                />
-              </div>
-              <div>
-                <label className="text-sm font-medium mb-1 block">
-                  Service Account JSON Key {settings?.hasServiceAccount && <span className="text-green-500 text-xs">(saved — paste a new one to replace)</span>}
-                </label>
-                <textarea
-                  placeholder='{"type": "service_account", "project_id": "...", "client_email": "...", ...}'
-                  value={settingsForm.serviceAccountJson}
-                  onChange={e => setSettingsForm({ ...settingsForm, serviceAccountJson: e.target.value })}
-                  className="w-full px-3 py-2 rounded-md border bg-background text-xs font-mono min-h-[120px]"
                 />
               </div>
               <label className="flex items-center gap-2 text-sm">
@@ -295,14 +281,14 @@ export default function JournalPage() {
             </div>
 
             <div className="flex gap-2 mt-5 justify-end">
-              <Button variant="outline" onClick={testConnection} disabled={isTesting || !settings?.hasServiceAccount && !settingsForm.serviceAccountJson}>
+              <Button variant="outline" onClick={testConnection} disabled={isTesting || !settings?.hasServiceAccount}>
                 {isTesting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Cloud className="mr-2 h-4 w-4" />}
                 Test Connection
               </Button>
               <Button onClick={saveSettings}>Save Settings</Button>
             </div>
             <p className="text-xs text-muted-foreground mt-3">
-              After saving, use "Test Connection", then "Sync Now" on the Journal page to push all entries into your doc.
+              Save first, then "Test Connection" to verify, and use "Sync Now" on the Journal page to push all entries into your doc.
             </p>
           </div>
         </div>

@@ -36,9 +36,11 @@ services:
       Ai__OllamaBaseUrl: ${OLLAMA_BASE_URL}
       Ai__OllamaModel: ${OLLAMA_MODEL:-llama3.2}
       MuseApiKey: ${MUSE_API_KEY}
+      Google__ServiceAccountPath: ${GOOGLE_SERVICE_ACCOUNT_PATH:-/app/data/secrets/google-service-account.json}
     volumes:
       - ${DATA_PATH:-/mnt/user/appdata/lifeos/data}/generated:/app/data/generated
       - ${DATA_PATH:-/mnt/user/appdata/lifeos/data}/uploads:/app/data/uploads
+      - ${DATA_PATH:-/mnt/user/appdata/lifeos/data}/secrets:/app/data/secrets:ro
     depends_on:
       postgres:
         condition: service_healthy

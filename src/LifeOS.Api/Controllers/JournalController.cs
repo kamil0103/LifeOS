@@ -113,8 +113,8 @@ public class JournalController : ControllerBase
         return Ok(new JournalSettingsDto
         {
             GoogleDocId = settings?.GoogleDocId,
-            HasServiceAccount = !string.IsNullOrWhiteSpace(settings?.ServiceAccountJson),
-            ServiceAccountEmail = ExtractServiceAccountEmail(settings?.ServiceAccountJson),
+            HasServiceAccount = _googleDocs.IsConfigured,
+            ServiceAccountEmail = _googleDocs.ServiceAccountEmail,
             AutoSync = settings?.AutoSync ?? false,
             LastSyncAt = settings?.LastSyncAt
         });
@@ -134,8 +134,6 @@ public class JournalController : ControllerBase
         }
 
         settings.GoogleDocId = request.GoogleDocId;
-        if (!string.IsNullOrWhiteSpace(request.ServiceAccountJson))
-            settings.ServiceAccountJson = request.ServiceAccountJson;
         settings.AutoSync = request.AutoSync;
         settings.UpdatedAt = DateTimeOffset.UtcNow;
 
@@ -144,8 +142,8 @@ public class JournalController : ControllerBase
         return Ok(new JournalSettingsDto
         {
             GoogleDocId = settings.GoogleDocId,
-            HasServiceAccount = !string.IsNullOrWhiteSpace(settings.ServiceAccountJson),
-            ServiceAccountEmail = ExtractServiceAccountEmail(settings.ServiceAccountJson),
+            HasServiceAccount = _googleDocs.IsConfigured,
+            ServiceAccountEmail = _googleDocs.ServiceAccountEmail,
             AutoSync = settings.AutoSync,
             LastSyncAt = settings.LastSyncAt
         });
@@ -158,12 +156,14 @@ public class JournalController : ControllerBase
     {
         var userId = GetUserId();
         var settings = await _context.JournalSettings.AsNoTracking().FirstOrDefaultAsync(s => s.UserId == userId, ct);
-        if (settings?.ServiceAccountJson == null || string.IsNullOrWhiteSpace(settings.GoogleDocId))
-            return BadRequest(new ProblemDetails { Title = "Not configured", Detail = "Set up your service account JSON and Google Doc ID first." });
+        if (string.IsNullOrWhiteSpace(settings?.GoogleDocId))
+            return BadRequest(new ProblemDetails { Title = "Not configured", Detail = "Set your Google Doc ID first." });
+        if (!_googleDocs.IsConfigured)
+            return BadRequest(new ProblemDetails { Title = "Service account missing", Detail = "The server has no Google service account key configured." });
 
         try
         {
-            var title = await _googleDocs.TestConnectionAsync(settings.ServiceAccountJson, settings.GoogleDocId, ct);
+            var title = await _googleDocs.TestConnectionAsync(settings.GoogleDocId, ct);
             return Ok(new { success = true, documentTitle = title });
         }
         catch (Exception ex)
@@ -178,8 +178,10 @@ public class JournalController : ControllerBase
     {
         var userId = GetUserId();
         var settings = await _context.JournalSettings.FirstOrDefaultAsync(s => s.UserId == userId, ct);
-        if (settings?.ServiceAccountJson == null || string.IsNullOrWhiteSpace(settings.GoogleDocId))
-            return BadRequest(new ProblemDetails { Title = "Not configured", Detail = "Set up your service account JSON and Google Doc ID first." });
+        if (string.IsNullOrWhiteSpace(settings?.GoogleDocId))
+            return BadRequest(new ProblemDetails { Title = "Not configured", Detail = "Set your Google Doc ID first." });
+        if (!_googleDocs.IsConfigured)
+            return BadRequest(new ProblemDetails { Title = "Service account missing", Detail = "The server has no Google service account key configured." });
 
         var entries = await _context.JournalEntries
             .AsNoTracking()
@@ -191,7 +193,7 @@ public class JournalController : ControllerBase
 
         try
         {
-            await _googleDocs.SyncJournalAsync(settings.ServiceAccountJson, settings.GoogleDocId, content, ct);
+            await _googleDocs.SyncJournalAsync(settings.GoogleDocId, content, ct);
             settings.LastSyncAt = DateTimeOffset.UtcNow;
             await _context.SaveChangesAsync(ct);
             return Ok(new { success = true, entriesSynced = entries.Count, syncedAt = settings.LastSyncAt });
@@ -208,12 +210,12 @@ public class JournalController : ControllerBase
         try
         {
             var settings = await _context.JournalSettings.FirstOrDefaultAsync(s => s.UserId == userId, ct);
-            if (settings?.AutoSync != true || settings.ServiceAccountJson == null || string.IsNullOrWhiteSpace(settings.GoogleDocId))
+            if (settings?.AutoSync != true || string.IsNullOrWhiteSpace(settings.GoogleDocId) || !_googleDocs.IsConfigured)
                 return;
 
             var entries = await _context.JournalEntries.AsNoTracking()
                 .Where(e => e.UserId == userId).OrderByDescending(e => e.EntryDate).ToListAsync(ct);
-            await _googleDocs.SyncJournalAsync(settings.ServiceAccountJson, settings.GoogleDocId, BuildJournalDocument(entries), ct);
+            await _googleDocs.SyncJournalAsync(settings.GoogleDocId, BuildJournalDocument(entries), ct);
             settings.LastSyncAt = DateTimeOffset.UtcNow;
             await _context.SaveChangesAsync(ct);
         }
@@ -244,17 +246,6 @@ public class JournalController : ControllerBase
         }
 
         return sb.ToString();
-    }
-
-    private static string? ExtractServiceAccountEmail(string? json)
-    {
-        if (string.IsNullOrWhiteSpace(json)) return null;
-        try
-        {
-            using var doc = System.Text.Json.JsonDocument.Parse(json);
-            return doc.RootElement.TryGetProperty("client_email", out var email) ? email.GetString() : null;
-        }
-        catch { return null; }
     }
 
     private static JournalEntryDto MapEntry(JournalEntry e) => new()
@@ -308,6 +299,5 @@ public class JournalSettingsDto
 public class SaveJournalSettingsRequest
 {
     public string? GoogleDocId { get; set; }
-    public string? ServiceAccountJson { get; set; }
     public bool AutoSync { get; set; }
 }
