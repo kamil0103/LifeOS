@@ -16,5 +16,5 @@ public interface IGoogleDocsService
     /// <summary>
     /// Replaces the entire document body with the given journal content.
     /// </summary>
-    Task SyncJournalAsync(string documentId, string content, CancellationToken ct = default);
+    Task SyncContentAsync(string documentId, string content, CancellationToken ct = default);
 }

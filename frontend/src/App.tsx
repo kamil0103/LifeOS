@@ -22,6 +22,7 @@ import CalendarPage from '@/modules/calendar/CalendarPage'
 import AnalyticsPage from '@/modules/analytics/AnalyticsPage'
 import NotificationsPage from '@/modules/notifications/NotificationsPage'
 import JournalPage from '@/modules/journal/JournalPage'
+import RecipesPage from '@/modules/recipes/RecipesPage'
 
 function App() {
   return (
@@ -41,6 +42,7 @@ function App() {
           <Route path="/coding" element={<CodingTrackerPage />} />
           <Route path="/bible" element={<BiblePage />} />
           <Route path="/journal" element={<JournalPage />} />
+          <Route path="/recipes" element={<RecipesPage />} />
           <Route path="/portfolio" element={<PortfolioPage />} />
           <Route path="/calendar" element={<CalendarPage />} />
           <Route path="/analytics" element={<AnalyticsPage />} />

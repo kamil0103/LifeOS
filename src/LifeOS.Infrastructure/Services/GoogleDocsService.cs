@@ -78,7 +78,7 @@ public class GoogleDocsService : IGoogleDocsService
         return doc.Title ?? "(untitled)";
     }
 
-    public async Task SyncJournalAsync(string documentId, string content, CancellationToken ct = default)
+    public async Task SyncContentAsync(string documentId, string content, CancellationToken ct = default)
     {
         var service = CreateClient();
 

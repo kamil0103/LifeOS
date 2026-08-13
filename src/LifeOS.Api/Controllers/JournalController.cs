@@ -193,7 +193,7 @@ public class JournalController : ControllerBase
 
         try
         {
-            await _googleDocs.SyncJournalAsync(settings.GoogleDocId, content, ct);
+            await _googleDocs.SyncContentAsync(settings.GoogleDocId, content, ct);
             settings.LastSyncAt = DateTimeOffset.UtcNow;
             await _context.SaveChangesAsync(ct);
             return Ok(new { success = true, entriesSynced = entries.Count, syncedAt = settings.LastSyncAt });
@@ -215,7 +215,7 @@ public class JournalController : ControllerBase
 
             var entries = await _context.JournalEntries.AsNoTracking()
                 .Where(e => e.UserId == userId).OrderByDescending(e => e.EntryDate).ToListAsync(ct);
-            await _googleDocs.SyncJournalAsync(settings.GoogleDocId, BuildJournalDocument(entries), ct);
+            await _googleDocs.SyncContentAsync(settings.GoogleDocId, BuildJournalDocument(entries), ct);
             settings.LastSyncAt = DateTimeOffset.UtcNow;
             await _context.SaveChangesAsync(ct);
         }

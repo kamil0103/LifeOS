@@ -40,6 +40,9 @@ public class AppDbContext : DbContext
     public DbSet<Notification> Notifications => Set<Notification>();
     public DbSet<JournalEntry> JournalEntries => Set<JournalEntry>();
     public DbSet<JournalSettings> JournalSettings => Set<JournalSettings>();
+    public DbSet<Recipe> Recipes => Set<Recipe>();
+    public DbSet<RecipeIngredient> RecipeIngredients => Set<RecipeIngredient>();
+    public DbSet<RecipeSettings> RecipeSettings => Set<RecipeSettings>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -71,6 +74,11 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<Degree>(e =>
         {
             e.HasMany(d => d.Courses).WithOne(c => c.Degree).HasForeignKey(c => c.DegreeId);
+        });
+
+        modelBuilder.Entity<Recipe>(e =>
+        {
+            e.HasMany(r => r.Ingredients).WithOne(i => i.Recipe).HasForeignKey(i => i.RecipeId).OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<Job>(e =>

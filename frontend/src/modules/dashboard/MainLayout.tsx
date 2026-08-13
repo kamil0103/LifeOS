@@ -23,6 +23,7 @@ import {
   TrendingUp,
   Bell,
   NotebookPen,
+  ChefHat,
 } from 'lucide-react'
 import { useState } from 'react'
 
@@ -45,6 +46,7 @@ const navItems = [
   { path: '/coding', label: 'Coding', icon: Code2 },
   { path: '/bible', label: 'Bible', icon: BookOpen },
   { path: '/journal', label: 'Journal', icon: NotebookPen },
+  { path: '/recipes', label: 'Recipes', icon: ChefHat },
   { path: '/portfolio', label: 'Portfolio', icon: Globe },
   { path: '/resume', label: 'Resume', icon: FileText },
   { path: '/documents', label: 'Documents', icon: FolderOpen },
