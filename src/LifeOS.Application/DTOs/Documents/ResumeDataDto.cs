@@ -33,6 +33,7 @@ public class ResumeProfileDto
     public string Location { get; set; } = string.Empty;
     public string LinkedIn { get; set; } = string.Empty;
     public string Portfolio { get; set; } = string.Empty;
+    [System.Text.Json.Serialization.JsonPropertyName("github")]
     public string GitHub { get; set; } = string.Empty;
     public string Summary { get; set; } = string.Empty;
 }

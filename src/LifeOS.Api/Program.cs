@@ -86,6 +86,7 @@ builder.Services.AddTransient<IAiProvider>(sp =>
 QuestPDF.Settings.License = LicenseType.Community;
 builder.Services.AddTransient<IResumeGenerator, QuestPdfResumeGenerator>();
 builder.Services.AddTransient<IResumeDataBuilder, ResumeDataBuilder>();
+builder.Services.AddTransient<IGoogleDocsService, GoogleDocsService>();
 builder.Services.AddSingleton<IDocumentStorage>(sp =>
 {
     var basePath = sp.GetRequiredService<IConfiguration>()["Documents:StoragePath"] ?? "./data/generated";

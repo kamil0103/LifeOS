@@ -38,6 +38,8 @@ public class AppDbContext : DbContext
     public DbSet<ReadingPlanDay> ReadingPlanDays => Set<ReadingPlanDay>();
     public DbSet<CalendarEvent> CalendarEvents => Set<CalendarEvent>();
     public DbSet<Notification> Notifications => Set<Notification>();
+    public DbSet<JournalEntry> JournalEntries => Set<JournalEntry>();
+    public DbSet<JournalSettings> JournalSettings => Set<JournalSettings>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

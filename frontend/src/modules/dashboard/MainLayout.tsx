@@ -22,6 +22,7 @@ import {
   Calendar as CalendarIcon,
   TrendingUp,
   Bell,
+  NotebookPen,
 } from 'lucide-react'
 import { useState } from 'react'
 
@@ -43,6 +44,7 @@ const navItems = [
   { path: '/skills', label: 'Skills', icon: Wrench },
   { path: '/coding', label: 'Coding', icon: Code2 },
   { path: '/bible', label: 'Bible', icon: BookOpen },
+  { path: '/journal', label: 'Journal', icon: NotebookPen },
   { path: '/portfolio', label: 'Portfolio', icon: Globe },
   { path: '/resume', label: 'Resume', icon: FileText },
   { path: '/documents', label: 'Documents', icon: FolderOpen },
