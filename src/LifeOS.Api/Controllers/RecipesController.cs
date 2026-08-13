@@ -109,9 +109,10 @@ public class RecipesController : ControllerBase
         recipe.Instructions = request.Instructions;
         recipe.UpdatedAt = DateTimeOffset.UtcNow;
 
-        // Replace ingredients
+        // Replace ingredients: remove old ones, then explicitly ADD new ones
+        // (assigning via navigation with pre-set Guids makes EF issue UPDATEs for non-existent rows)
         _context.RecipeIngredients.RemoveRange(recipe.Ingredients);
-        recipe.Ingredients = request.Ingredients.Select((ing, i) => new RecipeIngredient
+        var newIngredients = request.Ingredients.Select((ing, i) => new RecipeIngredient
         {
             RecipeId = recipe.Id,
             Name = ing.Name,
@@ -120,8 +121,10 @@ public class RecipesController : ControllerBase
             Notes = ing.Notes,
             SortOrder = i
         }).ToList();
+        _context.RecipeIngredients.AddRange(newIngredients);
 
         await _context.SaveChangesAsync(ct);
+        recipe.Ingredients = newIngredients;
         await MaybeAutoSync(userId, ct);
         return Ok(MapRecipe(recipe));
     }
