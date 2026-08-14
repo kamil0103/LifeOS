@@ -14,4 +14,5 @@ public class Recipe : BaseEntity
     public string Instructions { get; set; } = string.Empty;
 
     public List<RecipeIngredient> Ingredients { get; set; } = new();
+    public List<RecipeInstructionStep> Steps { get; set; } = new();
 }

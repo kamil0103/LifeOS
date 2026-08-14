@@ -42,6 +42,7 @@ public class AppDbContext : DbContext
     public DbSet<JournalSettings> JournalSettings => Set<JournalSettings>();
     public DbSet<Recipe> Recipes => Set<Recipe>();
     public DbSet<RecipeIngredient> RecipeIngredients => Set<RecipeIngredient>();
+    public DbSet<RecipeInstructionStep> RecipeInstructionSteps => Set<RecipeInstructionStep>();
     public DbSet<RecipeSettings> RecipeSettings => Set<RecipeSettings>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -79,6 +80,7 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<Recipe>(e =>
         {
             e.HasMany(r => r.Ingredients).WithOne(i => i.Recipe).HasForeignKey(i => i.RecipeId).OnDelete(DeleteBehavior.Cascade);
+            e.HasMany(r => r.Steps).WithOne(s => s.Recipe).HasForeignKey(s => s.RecipeId).OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<Job>(e =>

@@ -39,7 +39,7 @@ public class RecipesController : ControllerBase
         var userId = GetUserId();
         var recipes = await _context.Recipes
             .AsNoTracking()
-            .Include(r => r.Ingredients)
+            .Include(r => r.Ingredients).Include(r => r.Steps)
             .Where(r => r.UserId == userId)
             .OrderBy(r => r.Name)
             .ToListAsync(ct);
@@ -53,7 +53,7 @@ public class RecipesController : ControllerBase
         var userId = GetUserId();
         var recipe = await _context.Recipes
             .AsNoTracking()
-            .Include(r => r.Ingredients)
+            .Include(r => r.Ingredients).Include(r => r.Steps)
             .FirstOrDefaultAsync(r => r.Id == id && r.UserId == userId, ct);
 
         if (recipe == null) return NotFound();
@@ -81,6 +81,13 @@ public class RecipesController : ControllerBase
                 Unit = ing.Unit,
                 Notes = ing.Notes,
                 SortOrder = i
+            }).ToList(),
+            Steps = request.Steps.Select((s, i) => new RecipeInstructionStep
+            {
+                StepNumber = i + 1,
+                StepType = s.StepType,
+                Text = s.Text,
+                VariablesJson = SerializeVariables(s.Variables)
             }).ToList()
         };
 
@@ -95,7 +102,7 @@ public class RecipesController : ControllerBase
     {
         var userId = GetUserId();
         var recipe = await _context.Recipes
-            .Include(r => r.Ingredients)
+            .Include(r => r.Ingredients).Include(r => r.Steps)
             .FirstOrDefaultAsync(r => r.Id == id && r.UserId == userId, ct);
 
         if (recipe == null) return NotFound();
@@ -123,8 +130,21 @@ public class RecipesController : ControllerBase
         }).ToList();
         _context.RecipeIngredients.AddRange(newIngredients);
 
+        // Replace steps the same way
+        _context.RecipeInstructionSteps.RemoveRange(recipe.Steps);
+        var newSteps = request.Steps.Select((s, i) => new RecipeInstructionStep
+        {
+            RecipeId = recipe.Id,
+            StepNumber = i + 1,
+            StepType = s.StepType,
+            Text = s.Text,
+            VariablesJson = SerializeVariables(s.Variables)
+        }).ToList();
+        _context.RecipeInstructionSteps.AddRange(newSteps);
+
         await _context.SaveChangesAsync(ct);
         recipe.Ingredients = newIngredients;
+        recipe.Steps = newSteps;
         await MaybeAutoSync(userId, ct);
         return Ok(MapRecipe(recipe));
     }
@@ -229,7 +249,7 @@ public class RecipesController : ControllerBase
 
         var recipes = await _context.Recipes
             .AsNoTracking()
-            .Include(r => r.Ingredients)
+            .Include(r => r.Ingredients).Include(r => r.Steps)
             .Where(r => r.UserId == userId)
             .OrderBy(r => r.Name)
             .ToListAsync(ct);
@@ -258,7 +278,7 @@ public class RecipesController : ControllerBase
             if (settings?.AutoSync != true || string.IsNullOrWhiteSpace(settings.GoogleDocId) || !_googleDocs.IsConfigured)
                 return;
 
-            var recipes = await _context.Recipes.AsNoTracking().Include(r => r.Ingredients)
+            var recipes = await _context.Recipes.AsNoTracking().Include(r => r.Ingredients).Include(r => r.Steps)
                 .Where(r => r.UserId == userId).OrderBy(r => r.Name).ToListAsync(ct);
             await _googleDocs.SyncContentAsync(settings.GoogleDocId, BuildRecipeDocument(recipes), ct);
             settings.LastSyncAt = DateTimeOffset.UtcNow;
@@ -298,13 +318,45 @@ public class RecipesController : ControllerBase
                 sb.AppendLine(line);
             }
             sb.AppendLine();
-            sb.AppendLine("INSTRUCTIONS:");
-            sb.AppendLine(r.Instructions);
+            if (r.Steps.Any())
+            {
+                sb.AppendLine("INSTRUCTIONS:");
+                foreach (var s in r.Steps.OrderBy(s => s.StepNumber))
+                {
+                    var vars = DeserializeVariables(s.VariablesJson);
+                    var varText = vars.Count > 0
+                        ? "  [" + string.Join(", ", vars.Select(v => $"{v.Name}: {v.Value}{v.Unit}")) + "]"
+                        : "";
+                    sb.AppendLine($"  {s.StepNumber}. [{s.StepType.ToUpperInvariant()}] {s.Text}{varText}");
+                }
+            }
+            else if (!string.IsNullOrWhiteSpace(r.Instructions))
+            {
+                sb.AppendLine("INSTRUCTIONS:");
+                sb.AppendLine(r.Instructions);
+            }
             sb.AppendLine();
             sb.AppendLine(new string('-', 40));
         }
 
         return sb.ToString();
+    }
+
+    private static string SerializeVariables(List<StepVariableDto>? variables)
+    {
+        if (variables == null || variables.Count == 0) return "[]";
+        return System.Text.Json.JsonSerializer.Serialize(variables);
+    }
+
+    private static List<StepVariableDto> DeserializeVariables(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return new();
+        try
+        {
+            return System.Text.Json.JsonSerializer.Deserialize<List<StepVariableDto>>(json,
+                new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? new();
+        }
+        catch { return new(); }
     }
 
     private static RecipeDto MapRecipe(Recipe r) => new()
@@ -325,6 +377,14 @@ public class RecipesController : ControllerBase
             Quantity = i.Quantity,
             Unit = i.Unit,
             Notes = i.Notes
+        }).ToList(),
+        Steps = r.Steps.OrderBy(s => s.StepNumber).Select(s => new RecipeStepDto
+        {
+            Id = s.Id,
+            StepNumber = s.StepNumber,
+            StepType = s.StepType,
+            Text = s.Text,
+            Variables = DeserializeVariables(s.VariablesJson)
         }).ToList()
     };
 }
@@ -341,6 +401,24 @@ public class RecipeDto
     public string Instructions { get; set; } = string.Empty;
     public DateTimeOffset UpdatedAt { get; set; }
     public List<RecipeIngredientDto> Ingredients { get; set; } = new();
+    public List<RecipeStepDto> Steps { get; set; } = new();
+}
+
+public class RecipeStepDto
+{
+    public Guid Id { get; set; }
+    public int StepNumber { get; set; }
+    public string StepType { get; set; } = "prep";
+    public string Text { get; set; } = string.Empty;
+    public List<StepVariableDto> Variables { get; set; } = new();
+}
+
+public class StepVariableDto
+{
+    public string Name { get; set; } = string.Empty;      // cooking_time, temperature, rest_time, preheat, custom...
+    public decimal Value { get; set; }
+    public string? Unit { get; set; }                     // min, °F, °C, etc.
+    public string ScalingMode { get; set; } = "none";     // none | linear | sqrt
 }
 
 public class RecipeIngredientDto
@@ -362,6 +440,14 @@ public class SaveRecipeRequest
     public string? CookTime { get; set; }
     public string Instructions { get; set; } = string.Empty;
     public List<SaveIngredientRequest> Ingredients { get; set; } = new();
+    public List<SaveStepRequest> Steps { get; set; } = new();
+}
+
+public class SaveStepRequest
+{
+    public string StepType { get; set; } = "prep";
+    public string Text { get; set; } = string.Empty;
+    public List<StepVariableDto> Variables { get; set; } = new();
 }
 
 public class SaveIngredientRequest

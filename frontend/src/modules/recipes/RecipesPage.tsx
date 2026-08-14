@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import api from '@/lib/api'
 import { Button } from '@/components/ui/button'
-import { Loader2, Plus, Trash2, Pencil, ChefHat, Cloud, Settings, X, CheckCircle, AlertCircle, RefreshCw, Minus, Users } from 'lucide-react'
+import { Loader2, Plus, Trash2, Pencil, ChefHat, Cloud, Settings, X, CheckCircle, AlertCircle, RefreshCw, Minus, Users, ArrowUp, ArrowDown, Clock, Thermometer } from 'lucide-react'
 
 interface Ingredient {
   id?: string
@@ -9,6 +9,21 @@ interface Ingredient {
   quantity: number
   unit?: string
   notes?: string
+}
+
+interface StepVariable {
+  name: string
+  value: number
+  unit?: string
+  scalingMode: 'none' | 'linear' | 'sqrt'
+}
+
+interface RecipeStep {
+  id?: string
+  stepNumber: number
+  stepType: string
+  text: string
+  variables: StepVariable[]
 }
 
 interface Recipe {
@@ -21,6 +36,7 @@ interface Recipe {
   cookTime?: string
   instructions: string
   ingredients: Ingredient[]
+  steps: RecipeStep[]
 }
 
 interface RecipeSettings {
@@ -34,26 +50,58 @@ interface RecipeSettings {
 const UNITS = ['', 'pcs', 'cup', 'tbsp', 'tsp', 'oz', 'lb', 'g', 'kg', 'ml', 'l', 'pinch', 'clove', 'can', 'package', 'slice', 'bunch']
 const CATEGORIES = ['', 'Breakfast', 'Lunch', 'Dinner', 'Dessert', 'Snack', 'Drink', 'Side', 'Other']
 
+const STEP_TYPES = ['prep', 'mix', 'cook', 'bake', 'fry', 'boil', 'simmer', 'rest', 'chill', 'serve', 'note', 'other']
+
+const VARIABLE_PRESETS: Record<string, { unit: string; scalingMode: 'none' | 'linear' | 'sqrt' }> = {
+  cooking_time: { unit: 'min', scalingMode: 'sqrt' },
+  rest_time: { unit: 'min', scalingMode: 'linear' },
+  chill_time: { unit: 'min', scalingMode: 'linear' },
+  temperature: { unit: '°F', scalingMode: 'linear' },
+  preheat: { unit: '°F', scalingMode: 'none' },
+  water_temp: { unit: '°F', scalingMode: 'linear' },
+  pressure: { unit: 'psi', scalingMode: 'none' },
+  custom: { unit: '', scalingMode: 'none' },
+}
+
+const SCALING_MODES = [
+  { value: 'none', label: 'fixed' },
+  { value: 'linear', label: 'scales × servings' },
+  { value: 'sqrt', label: 'scales gently (√)' },
+]
+
 // Format a decimal quantity with common cooking fractions
 function formatQty(qty: number): string {
   if (qty <= 0) return '0'
   const rounded = Math.round(qty * 100) / 100
   const whole = Math.floor(rounded)
   const frac = rounded - whole
-
-  const fracs: Array<[number, string]> = [
-    [0.25, '¼'], [0.33, '⅓'], [0.5, '½'], [0.66, '⅔'], [0.67, '⅔'], [0.75, '¾'],
-  ]
-
+  const fracs: Array<[number, string]> = [[0.25, '¼'], [0.33, '⅓'], [0.5, '½'], [0.66, '⅔'], [0.67, '⅔'], [0.75, '¾']]
   let fracStr = ''
   for (const [val, sym] of fracs) {
     if (Math.abs(frac - val) < 0.02) { fracStr = sym; break }
   }
-
-  if (fracStr) {
-    return whole > 0 ? `${whole}${fracStr}` : fracStr
-  }
+  if (fracStr) return whole > 0 ? `${whole}${fracStr}` : fracStr
   return rounded % 1 === 0 ? String(rounded) : String(rounded)
+}
+
+function scaleVariable(v: StepVariable, ratio: number): number {
+  if (v.scalingMode === 'linear') return v.value * ratio
+  if (v.scalingMode === 'sqrt') return v.value * Math.sqrt(ratio)
+  return v.value
+}
+
+function formatVariable(v: StepVariable, ratio: number): string {
+  const scaled = scaleVariable(v, ratio)
+  const unit = v.unit || ''
+  if (unit === 'min') return `${Math.round(scaled)} min`
+  if (unit === '°F') return `${Math.round(scaled / 5) * 5}°F`
+  if (unit === '°C') return `${Math.round(scaled)}°C`
+  const rounded = Math.round(scaled * 10) / 10
+  return `${rounded}${unit ? ' ' + unit : ''}`
+}
+
+function variableLabel(name: string): string {
+  return name.replace(/_/g, ' ')
 }
 
 export default function RecipesPage() {
@@ -66,9 +114,10 @@ export default function RecipesPage() {
   const [showEditor, setShowEditor] = useState(false)
   const [editRecipe, setEditRecipe] = useState<Recipe | null>(null)
   const [form, setForm] = useState({
-    name: '', description: '', category: '', baseServings: 4, prepTime: '', cookTime: '', instructions: '',
+    name: '', description: '', category: '', baseServings: 4, prepTime: '', cookTime: '',
   })
   const [ingredients, setIngredients] = useState<Ingredient[]>([])
+  const [steps, setSteps] = useState<RecipeStep[]>([])
 
   const [showSettings, setShowSettings] = useState(false)
   const [settingsForm, setSettingsForm] = useState({ googleDocId: '', autoSync: false })
@@ -110,10 +159,13 @@ export default function RecipesPage() {
     return (ing.quantity * target) / recipe.baseServings
   }
 
+  const servingRatio = (recipe: Recipe) => getServings(recipe) / recipe.baseServings
+
   const openNew = () => {
     setEditRecipe(null)
-    setForm({ name: '', description: '', category: '', baseServings: 4, prepTime: '', cookTime: '', instructions: '' })
+    setForm({ name: '', description: '', category: '', baseServings: 4, prepTime: '', cookTime: '' })
     setIngredients([{ name: '', quantity: 1, unit: '' }])
+    setSteps([{ stepNumber: 1, stepType: 'prep', text: '', variables: [] }])
     setShowEditor(true)
   }
 
@@ -126,9 +178,21 @@ export default function RecipesPage() {
       baseServings: recipe.baseServings,
       prepTime: recipe.prepTime || '',
       cookTime: recipe.cookTime || '',
-      instructions: recipe.instructions,
     })
     setIngredients(recipe.ingredients.map(i => ({ name: i.name, quantity: i.quantity, unit: i.unit || '', notes: i.notes || '' })))
+    if (recipe.steps && recipe.steps.length > 0) {
+      setSteps(recipe.steps.map(s => ({
+        stepNumber: s.stepNumber,
+        stepType: s.stepType,
+        text: s.text,
+        variables: (s.variables || []).map(v => ({ ...v })),
+      })))
+    } else {
+      // Legacy: wrap the old text block into one note step so nothing is lost
+      setSteps(recipe.instructions
+        ? [{ stepNumber: 1, stepType: 'note', text: recipe.instructions, variables: [] }]
+        : [{ stepNumber: 1, stepType: 'prep', text: '', variables: [] }])
+    }
     setShowEditor(true)
   }
 
@@ -136,7 +200,11 @@ export default function RecipesPage() {
     if (!form.name.trim()) return
     const payload = {
       ...form,
+      instructions: '', // legacy field; steps are the source of truth now
       ingredients: ingredients.filter(i => i.name.trim()),
+      steps: steps
+        .filter(s => s.text.trim() || s.variables.length > 0)
+        .map((s, i) => ({ ...s, stepNumber: i + 1 })),
     }
     try {
       if (editRecipe) {
@@ -162,6 +230,7 @@ export default function RecipesPage() {
     }
   }
 
+  // ===== ingredient rows =====
   const addIngredientRow = () => setIngredients([...ingredients, { name: '', quantity: 1, unit: '' }])
   const removeIngredientRow = (idx: number) => setIngredients(ingredients.filter((_, i) => i !== idx))
   const updateIngredient = (idx: number, patch: Partial<Ingredient>) => {
@@ -170,6 +239,49 @@ export default function RecipesPage() {
     setIngredients(next)
   }
 
+  // ===== step rows =====
+  const addStep = () => setSteps([...steps, { stepNumber: steps.length + 1, stepType: 'prep', text: '', variables: [] }])
+  const removeStep = (idx: number) => setSteps(steps.filter((_, i) => i !== idx).map((s, i) => ({ ...s, stepNumber: i + 1 })))
+  const updateStep = (idx: number, patch: Partial<RecipeStep>) => {
+    const next = [...steps]
+    next[idx] = { ...next[idx], ...patch }
+    setSteps(next)
+  }
+  const moveStep = (idx: number, dir: -1 | 1) => {
+    const target = idx + dir
+    if (target < 0 || target >= steps.length) return
+    const next = [...steps]
+    ;[next[idx], next[target]] = [next[target], next[idx]]
+    setSteps(next.map((s, i) => ({ ...s, stepNumber: i + 1 })))
+  }
+
+  // ===== step variables =====
+  const addVariable = (stepIdx: number) => {
+    const next = [...steps]
+    next[stepIdx].variables.push({ name: 'cooking_time', value: 30, unit: 'min', scalingMode: 'sqrt' })
+    setSteps(next)
+  }
+  const removeVariable = (stepIdx: number, varIdx: number) => {
+    const next = [...steps]
+    next[stepIdx].variables = next[stepIdx].variables.filter((_, i) => i !== varIdx)
+    setSteps(next)
+  }
+  const updateVariable = (stepIdx: number, varIdx: number, patch: Partial<StepVariable>) => {
+    const next = [...steps]
+    const vars = [...next[stepIdx].variables]
+    const updated = { ...vars[varIdx], ...patch }
+    // apply preset defaults when name changes
+    if (patch.name && VARIABLE_PRESETS[patch.name]) {
+      const preset = VARIABLE_PRESETS[patch.name]
+      updated.unit = preset.unit
+      updated.scalingMode = preset.scalingMode
+    }
+    vars[varIdx] = updated
+    next[stepIdx].variables = vars
+    setSteps(next)
+  }
+
+  // ===== settings / sync =====
   const saveSettings = async () => {
     setSyncStatus(null)
     try {
@@ -258,9 +370,9 @@ export default function RecipesPage() {
       {/* Editor Modal */}
       {showEditor && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowEditor(false)}>
-          <div className="bg-card border rounded-lg p-6 w-[720px] max-h-[88vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+          <div className="bg-card border rounded-lg p-6 w-[780px] max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <h3 className="text-lg font-semibold mb-4">{editRecipe ? 'Edit Recipe' : 'New Recipe'}</h3>
-            <div className="space-y-3">
+            <div className="space-y-4">
               <div className="grid grid-cols-2 gap-3">
                 <input type="text" placeholder="Recipe name *" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} className="px-3 py-2 rounded-md border bg-background text-sm" />
                 <select value={form.category} onChange={e => setForm({ ...form, category: e.target.value })} className="px-3 py-2 rounded-md border bg-background text-sm">
@@ -294,27 +406,12 @@ export default function RecipesPage() {
                 <div className="space-y-2">
                   {ingredients.map((ing, idx) => (
                     <div key={idx} className="flex gap-2 items-center">
-                      <input
-                        type="number" min={0} step="0.25"
-                        value={ing.quantity}
-                        onChange={e => updateIngredient(idx, { quantity: parseFloat(e.target.value) || 0 })}
-                        className="w-20 px-2 py-2 rounded-md border bg-background text-sm"
-                      />
+                      <input type="number" min={0} step="0.25" value={ing.quantity} onChange={e => updateIngredient(idx, { quantity: parseFloat(e.target.value) || 0 })} className="w-20 px-2 py-2 rounded-md border bg-background text-sm" />
                       <select value={ing.unit || ''} onChange={e => updateIngredient(idx, { unit: e.target.value })} className="w-28 px-2 py-2 rounded-md border bg-background text-sm">
                         {UNITS.map(u => <option key={u} value={u}>{u || 'unit'}</option>)}
                       </select>
-                      <input
-                        type="text" placeholder="Ingredient name"
-                        value={ing.name}
-                        onChange={e => updateIngredient(idx, { name: e.target.value })}
-                        className="flex-1 px-3 py-2 rounded-md border bg-background text-sm"
-                      />
-                      <input
-                        type="text" placeholder="Notes"
-                        value={ing.notes || ''}
-                        onChange={e => updateIngredient(idx, { notes: e.target.value })}
-                        className="w-32 px-2 py-2 rounded-md border bg-background text-sm"
-                      />
+                      <input type="text" placeholder="Ingredient name" value={ing.name} onChange={e => updateIngredient(idx, { name: e.target.value })} className="flex-1 px-3 py-2 rounded-md border bg-background text-sm" />
+                      <input type="text" placeholder="Notes" value={ing.notes || ''} onChange={e => updateIngredient(idx, { notes: e.target.value })} className="w-32 px-2 py-2 rounded-md border bg-background text-sm" />
                       <button onClick={() => removeIngredientRow(idx)} className="text-destructive hover:text-destructive/80 shrink-0">
                         <X className="h-4 w-4" />
                       </button>
@@ -323,17 +420,79 @@ export default function RecipesPage() {
                 </div>
               </div>
 
+              {/* Modular steps builder */}
               <div>
-                <label className="text-sm font-medium mb-1 block">Instructions</label>
-                <textarea
-                  placeholder="Step by step instructions..."
-                  value={form.instructions}
-                  onChange={e => setForm({ ...form, instructions: e.target.value })}
-                  className="w-full px-3 py-2 rounded-md border bg-background text-sm min-h-[140px]"
-                />
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-sm font-medium">Instructions (modular steps)</label>
+                  <Button size="sm" variant="outline" onClick={addStep}>
+                    <Plus className="mr-1 h-3 w-3" /> Add Step
+                  </Button>
+                </div>
+                <div className="space-y-3">
+                  {steps.map((step, stepIdx) => (
+                    <div key={stepIdx} className="border border-border/60 rounded-md p-3 bg-secondary/20">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-xs font-bold text-muted-foreground w-5">{stepIdx + 1}.</span>
+                        <select value={step.stepType} onChange={e => updateStep(stepIdx, { stepType: e.target.value })} className="px-2 py-1.5 rounded-md border bg-background text-sm">
+                          {STEP_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                        </select>
+                        <input
+                          type="text"
+                          placeholder="What to do in this step..."
+                          value={step.text}
+                          onChange={e => updateStep(stepIdx, { text: e.target.value })}
+                          className="flex-1 px-3 py-1.5 rounded-md border bg-background text-sm"
+                        />
+                        <button onClick={() => moveStep(stepIdx, -1)} disabled={stepIdx === 0} className="text-muted-foreground hover:text-foreground disabled:opacity-30">
+                          <ArrowUp className="h-4 w-4" />
+                        </button>
+                        <button onClick={() => moveStep(stepIdx, 1)} disabled={stepIdx === steps.length - 1} className="text-muted-foreground hover:text-foreground disabled:opacity-30">
+                          <ArrowDown className="h-4 w-4" />
+                        </button>
+                        <button onClick={() => removeStep(stepIdx)} className="text-destructive hover:text-destructive/80">
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+
+                      {/* variables */}
+                      {step.variables.map((v, varIdx) => (
+                        <div key={varIdx} className="flex gap-2 items-center ml-7 mb-1.5">
+                          <select value={v.name} onChange={e => updateVariable(stepIdx, varIdx, { name: e.target.value })} className="w-36 px-2 py-1.5 rounded-md border bg-background text-xs">
+                            {Object.keys(VARIABLE_PRESETS).map(n => <option key={n} value={n}>{variableLabel(n)}</option>)}
+                          </select>
+                          <input
+                            type="number" min={0} step="any"
+                            value={v.value}
+                            onChange={e => updateVariable(stepIdx, varIdx, { value: parseFloat(e.target.value) || 0 })}
+                            className="w-24 px-2 py-1.5 rounded-md border bg-background text-xs"
+                          />
+                          <input
+                            type="text"
+                            value={v.unit || ''}
+                            onChange={e => updateVariable(stepIdx, varIdx, { unit: e.target.value })}
+                            placeholder="unit"
+                            className="w-16 px-2 py-1.5 rounded-md border bg-background text-xs"
+                          />
+                          <select value={v.scalingMode} onChange={e => updateVariable(stepIdx, varIdx, { scalingMode: e.target.value as 'none' | 'linear' | 'sqrt' })} className="px-2 py-1.5 rounded-md border bg-background text-xs">
+                            {SCALING_MODES.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+                          </select>
+                          <button onClick={() => removeVariable(stepIdx, varIdx)} className="text-destructive hover:text-destructive/80">
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                      <button onClick={() => addVariable(stepIdx)} className="ml-7 text-xs text-primary hover:underline flex items-center gap-1">
+                        <Plus className="h-3 w-3" /> Add variable (time, temp...)
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-xs text-muted-foreground mt-2">
+                  Variables like cooking time and temperature adapt when you change servings on the recipe card. The original recipe values never change.
+                </p>
               </div>
             </div>
-            <div className="flex gap-2 mt-4 justify-end">
+            <div className="flex gap-2 mt-5 justify-end">
               <Button variant="outline" onClick={() => setShowEditor(false)}>Cancel</Button>
               <Button onClick={saveRecipe}>Save Recipe</Button>
             </div>
@@ -412,6 +571,7 @@ export default function RecipesPage() {
         ) : (
           recipes.map(recipe => {
             const servings = getServings(recipe)
+            const ratio = servingRatio(recipe)
             return (
               <div key={recipe.id} className="bg-card border rounded-lg p-6">
                 <div className="flex items-start justify-between mb-3">
@@ -432,7 +592,7 @@ export default function RecipesPage() {
                   </div>
                 </div>
 
-                {/* Serving scaler */}
+                {/* Serving scaler — view-only, never modifies the saved recipe */}
                 <div className="flex items-center gap-3 mb-4 bg-secondary/40 rounded-md px-3 py-2 w-fit">
                   <Users className="h-4 w-4 text-primary" />
                   <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => adjustServings(recipe, -1)} disabled={servings <= 1}>
@@ -471,13 +631,40 @@ export default function RecipesPage() {
                   </div>
                 )}
 
-                {/* Instructions */}
-                {recipe.instructions && (
+                {/* Modular steps (variables scaled live; base values untouched) */}
+                {recipe.steps && recipe.steps.length > 0 ? (
+                  <div>
+                    <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">Instructions</h4>
+                    <div className="space-y-2">
+                      {recipe.steps.map((step, i) => (
+                        <div key={i} className="flex gap-3 text-sm">
+                          <span className="text-muted-foreground font-medium shrink-0 w-5">{i + 1}.</span>
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-primary/10 text-primary">{step.stepType}</span>
+                              <span className="text-muted-foreground">{step.text}</span>
+                            </div>
+                            {step.variables && step.variables.length > 0 && (
+                              <div className="flex flex-wrap gap-2 mt-1">
+                                {step.variables.map((v, vi) => (
+                                  <span key={vi} className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-secondary text-foreground">
+                                    {(v.unit === 'min' ? <Clock className="h-3 w-3 text-primary" /> : <Thermometer className="h-3 w-3 text-orange-400" />)}
+                                    {variableLabel(v.name)}: <strong>{formatVariable(v, ratio)}</strong>
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : recipe.instructions ? (
                   <div>
                     <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">Instructions</h4>
                     <p className="text-sm whitespace-pre-line text-muted-foreground">{recipe.instructions}</p>
                   </div>
-                )}
+                ) : null}
               </div>
             )
           })
