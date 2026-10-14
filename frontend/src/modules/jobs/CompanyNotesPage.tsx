@@ -1,146 +1,24 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
+import { useSearchParams, Link } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import api from '@/lib/api'
+import { notify } from '@/lib/notify'
+import { useUnsavedChanges } from '@/hooks/useUnsavedChanges'
+import { Modal } from '@/components/ui/modal'
 import { Button } from '@/components/ui/button'
-import { Loader2, Plus, Trash2, Star } from 'lucide-react'
-
-interface CompanyNote {
-  id: string
-  companyName: string
-  notes?: string
-  rating?: number
-  createdAt: string
-}
-
+interface Note { id: string; companyName: string; notes?: string; rating?: number; createdAt: string }
+const field = 'w-full border rounded-md p-2 bg-background'
 export default function CompanyNotesPage() {
-  const [notes, setNotes] = useState<CompanyNote[]>([])
-  const [isLoading, setIsLoading] = useState(true)
-  const [showAdd, setShowAdd] = useState(false)
-  const [newNote, setNewNote] = useState({ companyName: '', notes: '', rating: 3 })
-
-  useEffect(() => {
-    loadNotes()
-  }, [])
-
-  const loadNotes = () => {
-    setIsLoading(true)
-    api.get('/companynotes')
-      .then(({ data }) => setNotes(data))
-      .catch(console.error)
-      .finally(() => setIsLoading(false))
-  }
-
-  const addNote = async () => {
-    if (!newNote.companyName) return
-    try {
-      await api.post('/companynotes', newNote)
-      setNewNote({ companyName: '', notes: '', rating: 3 })
-      setShowAdd(false)
-      loadNotes()
-    } catch (err) {
-      console.error(err)
-    }
-  }
-
-  const deleteNote = async (id: string) => {
-    if (!confirm('Delete this note?')) return
-    try {
-      await api.delete(`/companynotes/${id}`)
-      loadNotes()
-    } catch (err) {
-      console.error(err)
-    }
-  }
-
-  if (isLoading) {
-    return (
-      <div className="p-8 flex items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
-    )
-  }
-
-  return (
-    <div className="p-8 max-w-5xl mx-auto">
-      <div className="mb-8 flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Company Notes</h1>
-          <p className="text-muted-foreground mt-1">Research and track companies</p>
-        </div>
-        <Button onClick={() => setShowAdd(true)}>
-          <Plus className="mr-2 h-4 w-4" />
-          Add Note
-        </Button>
-      </div>
-
-      {showAdd && (
-        <div className="bg-card border rounded-lg p-6 shadow-sm mb-6">
-          <h3 className="text-lg font-semibold mb-4">Add Company Note</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <input
-              placeholder="Company Name"
-              value={newNote.companyName}
-              onChange={(e) => setNewNote({ ...newNote, companyName: e.target.value })}
-              className="px-3 py-2 rounded-md border bg-background text-sm"
-            />
-            <div className="flex items-center gap-2">
-              <span className="text-sm">Rating:</span>
-              {[1, 2, 3, 4, 5].map((r) => (
-                <button
-                  key={r}
-                  onClick={() => setNewNote({ ...newNote, rating: r })}
-                  className="p-1"
-                >
-                  <Star
-                    className={`h-5 w-5 ${r <= newNote.rating ? 'text-yellow-500 fill-yellow-500' : 'text-muted-foreground'}`}
-                  />
-                </button>
-              ))}
-            </div>
-            <textarea
-              placeholder="Notes about the company..."
-              value={newNote.notes}
-              onChange={(e) => setNewNote({ ...newNote, notes: e.target.value })}
-              className="px-3 py-2 rounded-md border bg-background text-sm min-h-[80px] md:col-span-2"
-            />
-          </div>
-          <div className="mt-4 flex gap-2">
-            <Button onClick={addNote}>Save</Button>
-            <Button variant="outline" onClick={() => setShowAdd(false)}>Cancel</Button>
-          </div>
-        </div>
-      )}
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {notes.length === 0 && (
-          <div className="text-center py-12 text-muted-foreground md:col-span-2">
-            No company notes yet. Add research on companies you're interested in.
-          </div>
-        )}
-
-        {notes.map((note) => (
-          <div key={note.id} className="bg-card border rounded-lg p-6 shadow-sm">
-            <div className="flex items-start justify-between">
-              <div>
-                <h3 className="font-semibold">{note.companyName}</h3>
-                {note.rating && (
-                  <div className="flex gap-1 mt-1">
-                    {[1, 2, 3, 4, 5].map((r) => (
-                      <Star
-                        key={r}
-                        className={`h-4 w-4 ${r <= note.rating! ? 'text-yellow-500 fill-yellow-500' : 'text-muted-foreground'}`}
-                      />
-                    ))}
-                  </div>
-                )}
-              </div>
-              <Button variant="ghost" size="sm" onClick={() => deleteNote(note.id)}>
-                <Trash2 className="h-4 w-4 text-destructive" />
-              </Button>
-            </div>
-            {note.notes && <p className="mt-3 text-sm text-muted-foreground">{note.notes}</p>}
-          </div>
-        ))}
-      </div>
-    </div>
-  )
+  const [params] = useSearchParams(), company = params.get('company') || ''
+  const query = useQuery({ queryKey: ['company-notes'], queryFn: async () => (await api.get<Note[]>('/companynotes')).data })
+  const [search, setSearch] = useState(company), [open, setOpen] = useState(false), [id, setId] = useState<string | null>(null), [busy, setBusy] = useState(false)
+  const [draft, setDraft] = useState({ companyName: company, notes: '', rating: 3 }), [snapshot, setSnapshot] = useState('')
+  const dirty = open && JSON.stringify(draft) !== snapshot
+  useUnsavedChanges(dirty)
+  const edit = (note?: Note) => { const value = { companyName: note?.companyName || company, notes: note?.notes || '', rating: note?.rating || 3 }; setDraft(value); setId(note?.id || null); setSnapshot(JSON.stringify(value)); setOpen(true) }
+  const close = () => { if (!busy && (!dirty || window.confirm('Discard unsaved company research?'))) setOpen(false) }
+  const save = async () => { setBusy(true); try { if (id) await api.put('/companynotes/' + id, draft); else await api.post('/companynotes', draft); setOpen(false); await query.refetch(); notify('Company research saved.', 'success') } catch (e: any) { notify(e.response?.data?.detail || 'Could not save company research.', 'error') } finally { setBusy(false) } }
+  const remove = async (note: Note) => { if (!window.confirm('Delete this company note?')) return; setBusy(true); try { await api.delete('/companynotes/' + note.id); await query.refetch() } catch { notify('Could not delete the note.', 'error') } finally { setBusy(false) } }
+  const notes = (query.data || []).filter(n => (n.companyName + ' ' + (n.notes || '')).toLowerCase().includes(search.trim().toLowerCase()))
+  return <div className="max-w-5xl mx-auto space-y-5"><header className="flex flex-wrap justify-between gap-3"><div><h1 className="page-header">Company Notes</h1><p className="text-muted-foreground">Research, interview preparation and impressions.</p></div><Button onClick={() => edit()}>Add note</Button></header><input className={field} aria-label="Search company notes" placeholder="Company or research keywords" value={search} onChange={e => setSearch(e.target.value)} />{company && <Link className="text-sm underline" to="/jobs">Back to jobs</Link>}{query.isPending && <p role="status">Loading research…</p>}{query.isError && <p role="alert">Could not load company research. <Button onClick={() => query.refetch()}>Try again</Button></p>}{!query.isPending && !query.isError && !notes.length && <p className="glass-card p-6 text-muted-foreground">No research matches this search. Add a note for {company || 'a company'}.</p>}<ul className="space-y-3">{notes.map(note => <li className="glass-card p-4" key={note.id}><h2 className="font-medium">{note.companyName}</h2><p className="text-xs text-amber-400 my-1">{note.rating ? '★'.repeat(Math.max(0, Math.min(note.rating, 5))) : 'Not rated'}</p><p className="whitespace-pre-wrap text-sm">{note.notes || 'No research text yet.'}</p><p className="text-xs text-muted-foreground mt-2">Added {new Date(note.createdAt).toLocaleDateString()}</p><div className="flex gap-2 mt-3"><Button size="sm" variant="outline" disabled={busy} onClick={() => edit(note)}>Edit research</Button><Button size="sm" variant="ghost" disabled={busy} onClick={() => remove(note)}>Delete</Button></div></li>)}</ul><Modal open={open} onClose={close} title={id ? 'Edit company research' : 'Add company research'}><form className="space-y-3" onSubmit={e => { e.preventDefault(); save() }}><label className="block">Company<input required maxLength={200} className={field} value={draft.companyName} onChange={e => setDraft({ ...draft, companyName: e.target.value })} /></label><label className="block">Rating<select className={field} value={draft.rating} onChange={e => setDraft({ ...draft, rating: Number(e.target.value) })}>{[1, 2, 3, 4, 5].map(n => <option key={n} value={n}>{n} / 5</option>)}</select></label><label className="block">Research and notes<textarea className={field + ' min-h-[180px]'} placeholder="Products, team, interview questions, contacts, and your impressions" value={draft.notes} onChange={e => setDraft({ ...draft, notes: e.target.value })} /></label><Button disabled={busy}>{busy ? 'Saving…' : 'Save research'}</Button></form></Modal></div>
 }

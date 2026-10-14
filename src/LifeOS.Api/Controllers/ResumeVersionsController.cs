@@ -16,11 +16,13 @@ public class ResumeVersionsController : ControllerBase
 {
     private readonly AppDbContext _context;
     private readonly ICurrentUserService _currentUser;
+    private readonly ICareerWorkflowService _career;
 
-    public ResumeVersionsController(AppDbContext context, ICurrentUserService currentUser)
+    public ResumeVersionsController(AppDbContext context, ICurrentUserService currentUser, ICareerWorkflowService career)
     {
         _context = context;
         _currentUser = currentUser;
+        _career = career;
     }
 
     private Guid GetUserId()
@@ -132,6 +134,7 @@ public class ResumeVersionsController : ControllerBase
         if (version == null)
             return NotFound();
 
+        await _career.EnsureAssetUnusedAsync(id,true,ct);
         _context.ResumeVersions.Remove(version);
         await _context.SaveChangesAsync(ct);
         return NoContent();

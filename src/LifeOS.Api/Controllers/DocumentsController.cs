@@ -21,6 +21,7 @@ public class DocumentsController : ControllerBase
     private readonly IResumeDataBuilder _resumeDataBuilder;
     private readonly IDocumentStorage _documentStorage;
     private readonly IAiProvider _aiProvider;
+    private readonly ICareerWorkflowService _career;
 
     public DocumentsController(
         AppDbContext context,
@@ -28,7 +29,7 @@ public class DocumentsController : ControllerBase
         IResumeGenerator resumeGenerator,
         IResumeDataBuilder resumeDataBuilder,
         IDocumentStorage documentStorage,
-        IAiProvider aiProvider)
+        IAiProvider aiProvider, ICareerWorkflowService career)
     {
         _context = context;
         _currentUser = currentUser;
@@ -36,6 +37,7 @@ public class DocumentsController : ControllerBase
         _resumeDataBuilder = resumeDataBuilder;
         _documentStorage = documentStorage;
         _aiProvider = aiProvider;
+        _career = career;
     }
 
     private Guid GetUserId()
@@ -252,9 +254,10 @@ Return ONLY valid JSON:
         if (doc == null)
             return NotFound();
 
-        _documentStorage.Delete(doc.StoragePath);
+        await _career.EnsureAssetUnusedAsync(id,false,ct);
         _context.Documents.Remove(doc);
         await _context.SaveChangesAsync(ct);
+        _documentStorage.Delete(doc.StoragePath);
         return NoContent();
     }
 

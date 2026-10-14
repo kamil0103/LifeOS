@@ -1,0 +1,5 @@
+export interface JobFilters { search: string; status: string; location: string; source: string; sort: string }
+export function filterJobs<T extends { title: string; company: string; description: string; status: string; location?: string; source: string; matchScore?: number; createdAt: string }>(jobs: T[], filters: JobFilters): T[] {
+  const text = filters.search.trim().toLowerCase(), location = filters.location.trim().toLowerCase()
+  return jobs.filter(j => (!text || `${j.title} ${j.company} ${j.description}`.toLowerCase().includes(text)) && (!filters.status || j.status === filters.status) && (!location || (j.location || '').toLowerCase().includes(location)) && (!filters.source || j.source === filters.source)).sort((a, b) => filters.sort === 'match' ? (b.matchScore ?? -1) - (a.matchScore ?? -1) || Date.parse(b.createdAt) - Date.parse(a.createdAt) : filters.sort === 'company' ? a.company.localeCompare(b.company) || a.title.localeCompare(b.title) : filters.sort === 'oldest' ? Date.parse(a.createdAt) - Date.parse(b.createdAt) : Date.parse(b.createdAt) - Date.parse(a.createdAt))
+}

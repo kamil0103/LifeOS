@@ -18,13 +18,15 @@ public class JobsController : ControllerBase
     private readonly IAiProvider _aiProvider;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IConfiguration _config;
+    private readonly ICareerWorkflowService _career;
 
-    public JobsController(AppDbContext context, IAiProvider aiProvider, IHttpClientFactory httpClientFactory, IConfiguration config)
+    public JobsController(AppDbContext context, IAiProvider aiProvider, IHttpClientFactory httpClientFactory, IConfiguration config, ICareerWorkflowService career)
     {
         _context = context;
         _aiProvider = aiProvider;
         _httpClientFactory = httpClientFactory;
         _config = config;
+        _career = career;
     }
 
     private Guid GetUserId()
@@ -71,67 +73,20 @@ public class JobsController : ControllerBase
     [HttpPost]
     public async Task<ActionResult<JobDto>> CreateJob(CreateJobRequest request, CancellationToken ct)
     {
-        var userId = GetUserId();
-        var job = new Job
-        {
-            UserId = userId,
-            Title = request.Title,
-            Company = request.Company,
-            Location = request.Location,
-            Description = request.Description,
-            Url = request.Url,
-            Source = request.Source,
-            SalaryRange = request.SalaryRange,
-            JobType = request.JobType,
-            PostedDate = request.PostedDate,
-            Status = "saved"
-        };
-
-        _context.Jobs.Add(job);
-        await _context.SaveChangesAsync(ct);
-        return Ok(MapJob(job));
+        return Ok(await _career.SaveJobAsync(GetUserId(),request,ct));
     }
 
     [HttpPut("{id:guid}")]
     public async Task<ActionResult<JobDto>> UpdateJob(Guid id, UpdateJobRequest request, CancellationToken ct)
     {
-        var userId = GetUserId();
-        var job = await _context.Jobs
-            .FirstOrDefaultAsync(j => j.Id == id && j.UserId == userId, ct);
-
-        if (job == null) return NotFound();
-
-        job.Title = request.Title;
-        job.Company = request.Company;
-        job.Location = request.Location;
-        job.Description = request.Description;
-        job.Url = request.Url;
-        job.SalaryRange = request.SalaryRange;
-        job.JobType = request.JobType;
-        job.PostedDate = request.PostedDate;
-        job.MatchScore = request.MatchScore;
-        job.Status = request.Status;
-
-        await _context.SaveChangesAsync(ct);
-        return Ok(MapJob(job));
+        var job=await _career.UpdateJobAsync(GetUserId(),id,request,ct);
+        return job==null?NotFound():Ok(job);
     }
 
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> DeleteJob(Guid id, CancellationToken ct)
     {
-        var userId = GetUserId();
-        var job = await _context.Jobs
-            .FirstOrDefaultAsync(j => j.Id == id && j.UserId == userId, ct);
-
-        if (job == null) return NotFound();
-
-        // Detach generated documents (cover letters, QA sheets) so the FK doesn't block deletion
-        var docs = await _context.Documents.Where(d => d.JobId == id).ToListAsync(ct);
-        foreach (var doc in docs) doc.JobId = null;
-
-        _context.Jobs.Remove(job);
-        await _context.SaveChangesAsync(ct);
-        return NoContent();
+        return await _career.DeleteJobAsync(GetUserId(),id,ct)?NoContent():NotFound();
     }
 
     // ==================== AI MATCH SCORE ====================

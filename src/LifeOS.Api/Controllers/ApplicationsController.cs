@@ -14,10 +14,12 @@ namespace LifeOS.Api.Controllers;
 public class ApplicationsController : ControllerBase
 {
     private readonly AppDbContext _context;
+    private readonly LifeOS.Application.Interfaces.ICareerWorkflowService _career;
 
-    public ApplicationsController(AppDbContext context)
+    public ApplicationsController(AppDbContext context, LifeOS.Application.Interfaces.ICareerWorkflowService career)
     {
         _context = context;
+        _career = career;
     }
 
     private Guid GetUserId()
@@ -63,41 +65,7 @@ public class ApplicationsController : ControllerBase
     [HttpPost]
     public async Task<ActionResult<JobApplicationDto>> CreateApplication(CreateApplicationRequest request, CancellationToken ct)
     {
-        var userId = GetUserId();
-        
-        // Verify job exists and belongs to user
-        var job = await _context.Jobs
-            .FirstOrDefaultAsync(j => j.Id == request.JobId && j.UserId == userId, ct);
-        
-        if (job == null) return BadRequest("Job not found");
-
-        if(request.ResumeVersionId.HasValue && !await _context.ResumeVersions.AnyAsync(r=>r.Id==request.ResumeVersionId && r.UserId==userId,ct)) return BadRequest("Resume not found");
-
-        var application = new JobApplication
-        {
-            UserId = userId,
-            JobId = request.JobId,
-            ResumeVersionId = request.ResumeVersionId,
-            Status = "applied",
-            AppliedDate = request.AppliedDate ?? DateTime.UtcNow,
-            Notes = request.Notes
-        };
-
-        // Update job status
-        job.Status = "applied";
-
-        // Add status history
-        application.StatusHistory.Add(new ApplicationStatusHistory
-        {
-            Status = "applied",
-            ChangedAt = DateTimeOffset.UtcNow,
-            Notes = "Application created"
-        });
-
-        _context.JobApplications.Add(application);
-        await _context.SaveChangesAsync(ct);
-
-        return Ok(MapApplication(application));
+        return Ok(await _career.TrackApplicationAsync(GetUserId(),request,ct));
     }
 
     [HttpPut("{id:guid}/status")]
