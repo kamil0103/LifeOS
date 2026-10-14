@@ -63,6 +63,8 @@ export default function CodingTrackerPage() {
     loadData()
   }, [filterDifficulty, filterSolved])
 
+  useEffect(() => { const id = new URLSearchParams(window.location.search).get('problem'); if (id) document.getElementById('problem-' + id)?.scrollIntoView({ block: 'center' }) }, [problems])
+
   const loadData = async () => {
     setIsLoading(true)
     try {
@@ -268,7 +270,7 @@ export default function CodingTrackerPage() {
           </div>
         ) : (
           problems.map(problem => (
-            <div key={problem.id} className={`bg-card border rounded-lg p-4 ${problem.isSolved ? 'opacity-80' : ''}`}>
+            <div id={'problem-' + problem.id} key={problem.id} className={`${new URLSearchParams(window.location.search).get('problem') === problem.id ? 'ring-2 ring-blue-500' : ''} bg-card border rounded-lg p-4 ${problem.isSolved ? 'opacity-80' : ''}`}>
               <div className="flex items-start justify-between">
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-1">

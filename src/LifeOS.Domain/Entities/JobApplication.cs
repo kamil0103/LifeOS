@@ -14,6 +14,9 @@ public class JobApplication : BaseEntity
     public Guid? CoverLetterDocumentId { get; set; }
     public Document? CoverLetterDocument { get; set; }
 
+    public string? RecruiterName { get; set; }
+    public string? RecruiterEmail { get; set; }
+    public string? RecruiterPhone { get; set; }
     public string Status { get; set; } = "applied";
     public DateTime? AppliedDate { get; set; }
     public DateTime? FollowUpDate { get; set; }

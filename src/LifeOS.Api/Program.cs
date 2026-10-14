@@ -1,3 +1,4 @@
+using LifeOS.Infrastructure.Planning;
 using Microsoft.AspNetCore.DataProtection;
 using LifeOS.Infrastructure.Calendar;
 using System.Text;
@@ -63,6 +64,9 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddHttpClient();
 builder.Services.AddHttpClient("GoogleCalendar", client => client.Timeout = TimeSpan.FromSeconds(45));
 builder.Services.AddScoped<ICalendarService, CalendarService>();
+builder.Services.AddScoped<IPlanningService, PlanningService>();
+builder.Services.AddScoped<IReminderService, ReminderService>();
+if (!builder.Environment.IsEnvironment("Testing")) builder.Services.AddHostedService<ReminderWorker>();
 builder.Services.AddScoped<IGoogleCalendarService, GoogleCalendarService>();
 var integrationKeys = builder.Configuration["GoogleCalendar:KeyPath"] ?? "/app/data/integrations/keys";
 builder.Services.AddDataProtection().SetApplicationName("LifeOS").PersistKeysToFileSystem(new DirectoryInfo(integrationKeys));

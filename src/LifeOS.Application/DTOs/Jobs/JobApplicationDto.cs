@@ -6,6 +6,11 @@ public class JobApplicationDto
     public Guid JobId { get; set; }
     public string JobTitle { get; set; } = string.Empty;
     public string Company { get; set; } = string.Empty;
+    public string? RecruiterName { get; set; }
+    public string? RecruiterEmail { get; set; }
+    public string? RecruiterPhone { get; set; }
+    public Guid? CoverLetterDocumentId { get; set; }
+    public string? CoverLetterDocumentTitle { get; set; }
     public string Status { get; set; } = string.Empty;
     public DateTime? AppliedDate { get; set; }
     public DateTime? FollowUpDate { get; set; }

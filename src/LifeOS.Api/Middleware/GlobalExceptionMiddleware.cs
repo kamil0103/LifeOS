@@ -21,6 +21,10 @@ public class GlobalExceptionMiddleware
         {
             await _next(context);
         }
+        catch (CalendarEventAlreadyExistsException ex)
+        {
+            await WriteProblemResponse(context, HttpStatusCode.Conflict, ex.Message);
+        }
         catch (CalendarConflictException ex)
         {
             await WriteProblemResponse(context, HttpStatusCode.Conflict, ex.Message);

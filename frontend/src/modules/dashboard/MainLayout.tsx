@@ -2,7 +2,8 @@ import { useAuthStore } from '@/hooks/useAuthStore'
 import { canLeavePage } from '@/hooks/useUnsavedChanges'
 import { Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { Menu, X, ChevronDown, LogOut, LayoutDashboard, Briefcase, Target, BrainCircuit, GraduationCap, Building2, Wrench, Code2, BookOpen, NotebookPen, ChefHat, Globe, FileText, FolderOpen, Calendar, TrendingUp, Bell, UserCircle, ClipboardList, StickyNote } from 'lucide-react'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import api from '@/lib/api'
 const groups = [
   { name: 'Today', items: [{ path: '/', label: 'Dashboard', icon: LayoutDashboard }, { path: '/calendar', label: 'Calendar', icon: Calendar }, { path: '/habits', label: 'Habits', icon: Target }, { path: '/ai-coach', label: 'AI Coach', icon: BrainCircuit }, { path: '/notifications', label: 'Notifications', icon: Bell }] },
   { name: 'Career', items: [{ path: '/jobs', label: 'Jobs', icon: Briefcase }, { path: '/jobs/applications', label: 'Applications', icon: ClipboardList }, { path: '/jobs/notes', label: 'Company Notes', icon: StickyNote }, { path: '/resume', label: 'Resume', icon: FileText }, { path: '/documents', label: 'Documents', icon: FolderOpen }, { path: '/experience', label: 'Experience', icon: Building2 }, { path: '/portfolio', label: 'Portfolio', icon: Globe }] },
@@ -15,6 +16,8 @@ export default function MainLayout() {
   const logout = useAuthStore(state => state.logout)
   const navigate = useNavigate()
   const location = useLocation()
+  const [unread, setUnread] = useState(0)
+  useEffect(() => { const refresh = () => { api.get('/notifications/count').then(({ data }) => setUnread(data.unread)).catch(() => {}) }; refresh(); const timer = setInterval(refresh, 60000); window.addEventListener('notifications-updated', refresh); return () => { clearInterval(timer); window.removeEventListener('notifications-updated', refresh) } }, [])
   const [mobileOpen, setMobileOpen] = useState(false)
   const [closed, setClosed] = useState<string[]>([])
   const go = (path: string) => { if (canLeavePage()) { navigate(path); setMobileOpen(false) } }
@@ -25,7 +28,7 @@ export default function MainLayout() {
       <nav className="flex-1 overflow-y-auto p-3 space-y-3">
         {groups.map(group => <div key={group.name}>
           <button className="flex justify-between items-center w-full px-3 py-2 text-xs text-white/40 uppercase tracking-wider" aria-expanded={!closed.includes(group.name)} onClick={() => setClosed(old => old.includes(group.name) ? old.filter(x => x !== group.name) : [...old, group.name])}>{group.name}<ChevronDown size={14} className={closed.includes(group.name) ? '-rotate-90' : ''} /></button>
-          {!closed.includes(group.name) && group.items.map(item => <button key={item.path} aria-current={location.pathname === item.path ? 'page' : undefined} onClick={() => go(item.path)} className={`sidebar-item w-full ${location.pathname === item.path ? 'sidebar-item-active' : 'text-white/60 hover:text-white'}`}><item.icon size={17} />{item.label}</button>)}
+          {!closed.includes(group.name) && group.items.map(item => <button key={item.path} aria-current={location.pathname === item.path ? 'page' : undefined} onClick={() => go(item.path)} className={`sidebar-item w-full ${location.pathname === item.path ? 'sidebar-item-active' : 'text-white/60 hover:text-white'}`}><item.icon size={17} />{item.label}{item.path === '/notifications' && unread > 0 && <span className="ml-auto rounded-full bg-blue-500/20 px-2 text-xs" aria-label={unread + ' unread notifications'}>{unread > 99 ? '99+' : unread}</span>}</button>)}
         </div>)}
       </nav>
       <div className="p-4 border-t border-white/5"><p className="text-sm text-white truncate">{user?.fullName || user?.username}</p><button className="sidebar-item w-full mt-2 text-red-400" onClick={() => { if (canLeavePage()) logout() }}><LogOut size={17} />Sign Out</button></div>

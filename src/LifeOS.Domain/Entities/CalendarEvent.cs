@@ -15,6 +15,9 @@ public class CalendarEvent : BaseEntity
     public string? Color { get; set; }
     public bool IsRecurring { get; set; } = false;
     public string? RecurrenceRule { get; set; }
+    public string? ActionKey { get; set; }
+    public Guid? ApplicationId { get; set; }
+    public JobApplication? Application { get; set; }
     public Guid? HabitId { get; set; }
     public Habit? Habit { get; set; }
     public Guid? JobId { get; set; }

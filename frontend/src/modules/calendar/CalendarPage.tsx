@@ -6,14 +6,14 @@ import { useUnsavedChanges } from '@/hooks/useUnsavedChanges'
 import { Button } from '@/components/ui/button'
 import { Modal } from '@/components/ui/modal'
 import { Plus, ChevronLeft, ChevronRight, RefreshCw, ExternalLink } from 'lucide-react'
-interface EventItem { id: string; title: string; description?: string; startTime: string; endTime?: string; isAllDay: boolean; startDate?: string; endDate?: string; location?: string; eventType: string; googleEventId?: string; calendarName?: string; editable?: boolean; etag?: string; htmlLink?: string }
+interface EventItem { applicationId?: string; id: string; title: string; description?: string; startTime: string; endTime?: string; isAllDay: boolean; startDate?: string; endDate?: string; location?: string; eventType: string; googleEventId?: string; calendarName?: string; editable?: boolean; etag?: string; htmlLink?: string }
 interface Connection { configured: boolean; connected: boolean; accountEmail?: string; lastSyncAt?: string; error?: string; calendars: Array<{ id: string; name: string; selected: boolean; editable: boolean }>; shareDetailsWithCoach: boolean; redirectUri?: string }
 const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const field = 'w-full px-3 py-2 rounded-md border bg-background text-sm'
 const empty = { title: '', description: '', start: '', end: '', isAllDay: false, location: '', eventType: 'general', destination: 'local' }
 export default function CalendarPage() {
   const [zone, setZone] = useState('America/Los_Angeles')
-  const [anchor, setAnchor] = useState(dateKey(new Date(), 'America/Los_Angeles'))
+  const [anchor, setAnchor] = useState(new URLSearchParams(window.location.search).get('date')?.match(/^\d{4}-\d{2}-\d{2}$/)?.[0] || dateKey(new Date(), 'America/Los_Angeles'))
   const [mode, setMode] = useState<'month' | 'week' | 'agenda'>('month')
   const [events, setEvents] = useState<EventItem[]>([])
   const [loading, setLoading] = useState(false)
@@ -31,6 +31,7 @@ export default function CalendarPage() {
   const settingsDirty = !!connection?.connected && (JSON.stringify([...selectedCalendars].sort()) !== JSON.stringify(connection.calendars.filter(c => c.selected).map(c => c.id).sort()) || shareDetails !== connection.shareDetailsWithCoach)
   useUnsavedChanges(dirty || settingsDirty)
   const latestRequest = useRef(0)
+  const openedLink = useRef(false)
   const readonly = !!editing?.googleEventId && !editing.editable
   const range = useMemo(() => {
     const first = anchor.slice(0, 7) + '-01'
@@ -45,7 +46,7 @@ export default function CalendarPage() {
     if (resetSelection) { setSelectedCalendars(data.calendars.filter((c: { selected: boolean }) => c.selected).map((c: { id: string }) => c.id)); setShareDetails(data.shareDetailsWithCoach) }
   }
   useEffect(() => {
-    api.get('/profile').then(({ data }) => { const zone = data.timeZone || 'America/Los_Angeles'; try { setAnchor(dateKey(new Date(), zone)); setZone(zone) } catch { /* Use the default timezone for invalid profiles. */ } }).catch(() => {})
+    api.get('/profile').then(({ data }) => { const zone = data.timeZone || 'America/Los_Angeles'; try { if (!new URLSearchParams(window.location.search).has('date')) setAnchor(dateKey(new Date(), zone)); setZone(zone) } catch { /* Use the default timezone for invalid profiles. */ } }).catch(() => {})
     reloadStatus().catch(() => notify('Could not load the Google Calendar connection.', 'error'))
     const result = new URLSearchParams(window.location.search).get('google')
     if (result) { notify(result === 'connected' ? 'Google Calendar connected.' : result === 'cancelled' ? 'Google connection cancelled.' : 'Google connection failed. Check setup and try again.', result === 'failed' ? 'error' : 'info'); window.history.replaceState({}, '', window.location.pathname) }
@@ -79,6 +80,7 @@ export default function CalendarPage() {
     const next = { title: event.title, description: event.description || '', location: event.location || '', isAllDay: event.isAllDay, start, end, eventType: event.eventType || 'general', destination: event.googleEventId ? 'google' : 'local' }
     setEditing(event); setForm(next); setSnapshot(JSON.stringify(next)); setOpen(true)
   }
+  useEffect(() => { const id = new URLSearchParams(window.location.search).get('event'); const event = events.find(e => e.id === id || e.googleEventId === id); if (event && !openedLink.current) { openedLink.current = true; openEvent(event) } }, [events, zone])
   const close = () => { if (!dirty || window.confirm('Discard unsaved event changes?')) setOpen(false) }
   const save = async () => {
     if (readonly) return
@@ -139,6 +141,7 @@ export default function CalendarPage() {
         <label className="block text-sm">Title<input className={field} value={form.title} disabled={readonly || saving} maxLength={200} onChange={e => setForm({ ...form, title: e.target.value })} /></label>
         <label className="block text-sm">Description<textarea className={field} value={form.description} disabled={readonly || saving} rows={3} onChange={e => setForm({ ...form, description: e.target.value })} /></label>
         <label className="flex gap-2 text-sm"><input type="checkbox" checked={form.isAllDay} disabled={readonly || saving} onChange={e => setForm({ ...form, isAllDay: e.target.checked, start: e.target.checked ? form.start.slice(0, 10) : form.start + 'T09:00', end: e.target.checked ? form.end.slice(0, 10) : form.end + 'T10:00' })} />All day</label>
+        {editing?.applicationId && <a className="text-sm underline" href={'/jobs/applications?application=' + editing.applicationId}>Open linked application</a>}
         <div className="grid sm:grid-cols-2 gap-3"><label className="text-sm">Start<input className={field} type={form.isAllDay ? 'date' : 'datetime-local'} value={form.start} disabled={readonly || saving} onChange={e => setForm({ ...form, start: e.target.value })} /></label><label className="text-sm">{form.isAllDay ? 'Last day' : 'End'}<input className={field} type={form.isAllDay ? 'date' : 'datetime-local'} value={form.end} disabled={readonly || saving} onChange={e => setForm({ ...form, end: e.target.value })} /></label></div>
         <label className="block text-sm">Location<input className={field} value={form.location} disabled={readonly || saving} onChange={e => setForm({ ...form, location: e.target.value })} /></label>
         {!editing && <label className="block text-sm">Calendar<select className={field} value={form.destination} onChange={e => setForm({ ...form, destination: e.target.value })}><option value="local">LifeOS local</option>{connection?.connected && <option value="google">LifeOS in Google Calendar</option>}</select></label>}

@@ -15,3 +15,5 @@ public interface IGoogleCalendarService
     Task SyncAllAsync(CancellationToken ct);
 }
 public class CalendarConflictException : Exception { public CalendarConflictException() : base("This event changed in Google Calendar. Reload it before saving your changes.") {} }
+
+public class CalendarEventAlreadyExistsException : Exception { public CalendarEventAlreadyExistsException() : base("This action is already scheduled. Open Calendar to edit its time.") {} }

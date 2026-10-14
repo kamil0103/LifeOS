@@ -31,5 +31,6 @@ public class GoogleEventRequest
     public string? EndDate { get; set; }
     public string? Location { get; set; }
     public string? Etag { get; set; }
+    public string? ActionKey { get; set; }
 }
 public record GoogleCalendarSettings(List<string> CalendarIds, bool ShareDetailsWithCoach);

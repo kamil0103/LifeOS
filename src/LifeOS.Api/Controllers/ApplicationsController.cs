@@ -35,6 +35,7 @@ public class ApplicationsController : ControllerBase
             .Where(a => a.UserId == userId)
             .Include(a => a.Job)
             .Include(a => a.ResumeVersion)
+            .Include(a => a.CoverLetterDocument)
             .Include(a => a.StatusHistory)
             .OrderByDescending(a => a.CreatedAt)
             .ToListAsync(ct);
@@ -50,6 +51,7 @@ public class ApplicationsController : ControllerBase
             .AsNoTracking()
             .Include(a => a.Job)
             .Include(a => a.ResumeVersion)
+            .Include(a => a.CoverLetterDocument)
             .Include(a => a.StatusHistory)
             .FirstOrDefaultAsync(a => a.Id == id && a.UserId == userId, ct);
 
@@ -67,6 +69,8 @@ public class ApplicationsController : ControllerBase
             .FirstOrDefaultAsync(j => j.Id == request.JobId && j.UserId == userId, ct);
         
         if (job == null) return BadRequest("Job not found");
+
+        if(request.ResumeVersionId.HasValue && !await _context.ResumeVersions.AnyAsync(r=>r.Id==request.ResumeVersionId && r.UserId==userId,ct)) return BadRequest("Resume not found");
 
         var application = new JobApplication
         {
@@ -106,6 +110,7 @@ public class ApplicationsController : ControllerBase
 
         if (application == null) return NotFound();
 
+        if(!new[]{"applied","phone_screen","interview","offer","rejected","withdrawn"}.Contains(request.Status)) return BadRequest("Unknown application status");
         var oldStatus = application.Status;
         application.Status = request.Status;
 
@@ -150,6 +155,8 @@ public class ApplicationsController : ControllerBase
 
         if (application == null) return NotFound();
 
+        var linked=await _context.CalendarEvents.Where(e=>e.ApplicationId==id && e.UserId==userId).ToListAsync(ct);
+        _context.CalendarEvents.RemoveRange(linked);
         _context.JobApplications.Remove(application);
         await _context.SaveChangesAsync(ct);
         return NoContent();
@@ -159,15 +166,17 @@ public class ApplicationsController : ControllerBase
     {
         Id = a.Id,
         JobId = a.JobId,
-        JobTitle = a.Job.Title,
-        Company = a.Job.Company,
+        JobTitle = a.Job?.Title ?? "",
+        Company = a.Job?.Company ?? "",
+        RecruiterName=a.RecruiterName, RecruiterEmail=a.RecruiterEmail, RecruiterPhone=a.RecruiterPhone,
+        CoverLetterDocumentId=a.CoverLetterDocumentId, CoverLetterDocumentTitle=a.CoverLetterDocument?.Filename,
         Status = a.Status,
         AppliedDate = a.AppliedDate,
         FollowUpDate = a.FollowUpDate,
         Notes = a.Notes,
         ResumeVersionId = a.ResumeVersionId,
         ResumeVersionTitle = a.ResumeVersion?.Title,
-        StatusHistory = a.StatusHistory.Select(h => new ApplicationStatusHistoryDto
+        StatusHistory = a.StatusHistory.OrderByDescending(h=>h.ChangedAt).Select(h => new ApplicationStatusHistoryDto
         {
             Status = h.Status,
             ChangedAt = h.ChangedAt,

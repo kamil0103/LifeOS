@@ -37,6 +37,7 @@ public class AppDbContext : DbContext
     public DbSet<ReadingPlan> ReadingPlans => Set<ReadingPlan>();
     public DbSet<ReadingPlanDay> ReadingPlanDays => Set<ReadingPlanDay>();
     public DbSet<CalendarEvent> CalendarEvents => Set<CalendarEvent>();
+    public DbSet<ReminderPreferences> ReminderPreferences => Set<ReminderPreferences>();
     public DbSet<Notification> Notifications => Set<Notification>();
     public DbSet<JournalEntry> JournalEntries => Set<JournalEntry>();
     public DbSet<JournalSettings> JournalSettings => Set<JournalSettings>();
@@ -98,6 +99,11 @@ public class AppDbContext : DbContext
             e.HasMany(h => h.Completions).WithOne(c => c.Habit).HasForeignKey(c => c.HabitId);
             e.HasOne(h => h.Streak).WithOne(s => s.Habit).HasForeignKey<Streak>(s => s.HabitId);
         });
+
+        modelBuilder.Entity<ReminderPreferences>(e => { e.HasKey(p => p.UserId); e.HasOne(p => p.User).WithMany().HasForeignKey(p => p.UserId).OnDelete(DeleteBehavior.Cascade); });
+        modelBuilder.Entity<Notification>(e => e.HasIndex(n => new { n.UserId, n.SourceKey }).IsUnique());
+        modelBuilder.Entity<CalendarEvent>(e => e.HasIndex(c => new { c.UserId, c.ActionKey }).IsUnique());
+        modelBuilder.Entity<CalendarEvent>(e => e.HasOne(c => c.Application).WithMany().HasForeignKey(c => c.ApplicationId).OnDelete(DeleteBehavior.SetNull));
 
         modelBuilder.Entity<DailyMission>(e =>
         {

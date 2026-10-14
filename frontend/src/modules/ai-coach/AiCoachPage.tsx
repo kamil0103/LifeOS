@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Loader2, Sparkles, Check, MessageCircle, AlertTriangle, Lightbulb, Send } from 'lucide-react'
 
 interface MissionPriority {
+  completed?: boolean
   title: string
   category: string
   priority: string
@@ -203,12 +204,13 @@ export default function AiCoachPage() {
                     <span className="text-2xl">{getCategoryIcon(priority.category)}</span>
                     <div className="flex-1">
                       <div className="flex items-center gap-2">
-                        <h3 className="font-medium">{priority.title}</h3>
+                        <h3 className={`font-medium ${priority.completed ? 'line-through opacity-60' : ''}`}>{priority.title}</h3>
                         <span className="text-xs px-2 py-0.5 rounded bg-background/50 uppercase">
                           {priority.priority}
                         </span>
                       </div>
                       <p className="text-sm mt-1 opacity-80">{priority.reason}</p>
+                      {priority.completed ? <span className="text-xs">Completed</span> : !mission.isCompleted && <Button size="sm" variant="outline" className="mt-2" onClick={async () => { try { await api.post('/planning/complete', { actionId: `mission:${mission.id}:${idx}` }); const { data } = await api.get('/aicoach/mission'); setMission(data) } catch (err: any) { notify(err.response?.data?.detail || 'Could not complete the mission item.', 'error') } }}>Complete item</Button>}
                     </div>
                   </div>
                 </div>

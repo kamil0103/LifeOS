@@ -144,7 +144,8 @@ public class GoogleCalendarService : IGoogleCalendarService
         if(eventId!=null && string.IsNullOrWhiteSpace(request.Etag))throw new InvalidOperationException("Reload the event before editing it.");
         object start=request.IsAllDay?new{date=request.StartDate}:(object)new{dateTime=request.StartTime.ToUniversalTime().ToString("O")};
         object end=request.IsAllDay?new{date=request.EndDate}:(object)new{dateTime=(request.EndTime??request.StartTime.AddHours(1)).ToUniversalTime().ToString("O")};
-        var payload=new{summary=request.Title.Trim(),description=request.Description,location=request.Location,start,end};
+        var payload=new Dictionary<string,object?> { ["summary"]=request.Title.Trim(), ["description"]=request.Description, ["location"]=request.Location, ["start"]=start, ["end"]=end };
+        if(eventId==null && !string.IsNullOrWhiteSpace(request.ActionKey))payload["id"]="lifeos"+Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(userId+":"+request.ActionKey))).ToLowerInvariant();
         var url=CalendarUrl(account.CalendarId)+"/events"+(eventId!=null?"/"+Uri.EscapeDataString(eventId):"");
         var body=await Send(account,eventId==null?HttpMethod.Post:HttpMethod.Patch,url,payload,eventId!=null?request.Etag:null,ct);
         if(!account.SelectedIds.Contains(account.CalendarId))account.SelectedIds.Add(account.CalendarId);
@@ -205,6 +206,7 @@ public class GoogleCalendarService : IGoogleCalendarService
         if(etag!=null)request.Headers.TryAddWithoutValidation("If-Match",etag);
         if(data!=null)request.Content=new StringContent(JsonSerializer.Serialize(data,Json),Encoding.UTF8,"application/json");
         using var response=await _http.CreateClient("GoogleCalendar").SendAsync(request,ct);
+        if(response.StatusCode==HttpStatusCode.Conflict)throw new CalendarEventAlreadyExistsException();
         if(response.StatusCode==HttpStatusCode.PreconditionFailed)throw new CalendarConflictException();
         if(response.StatusCode==HttpStatusCode.Unauthorized)throw new InvalidOperationException("Google access expired. Reconnect Google Calendar.");
         if(!response.IsSuccessStatusCode)throw new InvalidOperationException($"Google Calendar could not complete this action ({(int)response.StatusCode}). Check access and try again.");

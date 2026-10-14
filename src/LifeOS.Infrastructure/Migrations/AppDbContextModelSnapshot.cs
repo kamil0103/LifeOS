@@ -202,6 +202,12 @@ namespace LifeOS.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<string>("ActionKey")
+                        .HasColumnType("text");
+
+                    b.Property<Guid?>("ApplicationId")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("Color")
                         .HasColumnType("text");
 
@@ -251,9 +257,14 @@ namespace LifeOS.Infrastructure.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("ApplicationId");
+
                     b.HasIndex("HabitId");
 
                     b.HasIndex("JobId");
+
+                    b.HasIndex("UserId", "ActionKey")
+                        .IsUnique();
 
                     b.HasIndex("UserId", "StartTime");
 
@@ -775,6 +786,15 @@ namespace LifeOS.Infrastructure.Migrations
                     b.Property<string>("Notes")
                         .HasColumnType("text");
 
+                    b.Property<string>("RecruiterEmail")
+                        .HasColumnType("text");
+
+                    b.Property<string>("RecruiterName")
+                        .HasColumnType("text");
+
+                    b.Property<string>("RecruiterPhone")
+                        .HasColumnType("text");
+
                     b.Property<Guid?>("ResumeVersionId")
                         .HasColumnType("uuid");
 
@@ -883,6 +903,9 @@ namespace LifeOS.Infrastructure.Migrations
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<bool>("IsArchived")
+                        .HasColumnType("boolean");
+
                     b.Property<bool>("IsRead")
                         .HasColumnType("boolean");
 
@@ -892,6 +915,12 @@ namespace LifeOS.Infrastructure.Migrations
 
                     b.Property<DateTimeOffset?>("ReadAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTimeOffset?>("SnoozedUntil")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("SourceKey")
+                        .HasColumnType("text");
 
                     b.Property<string>("Title")
                         .IsRequired()
@@ -910,6 +939,9 @@ namespace LifeOS.Infrastructure.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("UserId", "IsRead");
+
+                    b.HasIndex("UserId", "SourceKey")
+                        .IsUnique();
 
                     b.ToTable("Notifications");
                 });
@@ -1273,6 +1305,28 @@ namespace LifeOS.Infrastructure.Migrations
                     b.ToTable("RefreshTokens");
                 });
 
+            modelBuilder.Entity("LifeOS.Domain.Entities.ReminderPreferences", b =>
+                {
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("CalendarEnabled")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("CalendarLeadMinutes")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("CodingReviewsEnabled")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("FollowUpsEnabled")
+                        .HasColumnType("boolean");
+
+                    b.HasKey("UserId");
+
+                    b.ToTable("ReminderPreferences");
+                });
+
             modelBuilder.Entity("LifeOS.Domain.Entities.ResumeVersion", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1583,6 +1637,11 @@ namespace LifeOS.Infrastructure.Migrations
 
             modelBuilder.Entity("LifeOS.Domain.Entities.CalendarEvent", b =>
                 {
+                    b.HasOne("LifeOS.Domain.Entities.JobApplication", "Application")
+                        .WithMany()
+                        .HasForeignKey("ApplicationId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("LifeOS.Domain.Entities.Habit", "Habit")
                         .WithMany()
                         .HasForeignKey("HabitId");
@@ -1596,6 +1655,8 @@ namespace LifeOS.Infrastructure.Migrations
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.Navigation("Application");
 
                     b.Navigation("Habit");
 
@@ -1910,6 +1971,17 @@ namespace LifeOS.Infrastructure.Migrations
                 });
 
             modelBuilder.Entity("LifeOS.Domain.Entities.RefreshToken", b =>
+                {
+                    b.HasOne("LifeOS.Domain.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("LifeOS.Domain.Entities.ReminderPreferences", b =>
                 {
                     b.HasOne("LifeOS.Domain.Entities.User", "User")
                         .WithMany()

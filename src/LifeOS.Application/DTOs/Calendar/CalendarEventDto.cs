@@ -12,6 +12,7 @@ public class CalendarEventDto
     public string EventType { get; set; } = string.Empty;
     public string? Color { get; set; }
     public bool IsRecurring { get; set; }
+    public Guid? ApplicationId { get; set; }
     public Guid? HabitId { get; set; }
     public string? HabitName { get; set; }
     public Guid? JobId { get; set; }
@@ -28,6 +29,7 @@ public class CreateCalendarEventRequest
     public string? Location { get; set; }
     public string EventType { get; set; } = "general";
     public string? Color { get; set; }
+    public string? ActionKey { get; set; }
     public Guid? HabitId { get; set; }
     public Guid? JobId { get; set; }
 }
