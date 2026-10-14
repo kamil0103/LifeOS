@@ -19,6 +19,9 @@ api.interceptors.request.use((config) => {
   return config
 })
 
+// Share one refresh across simultaneous requests after the access token expires.
+let refreshInFlight: Promise<string> | null = null
+
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
@@ -26,17 +29,27 @@ api.interceptors.response.use(
 
     if (error.response?.status === 401 && !originalRequest._retry) {
       originalRequest._retry = true
+      const currentAccessToken = localStorage.getItem('accessToken')
+      if (currentAccessToken && originalRequest.headers.Authorization !== `Bearer ${currentAccessToken}`) {
+        originalRequest.headers.Authorization = `Bearer ${currentAccessToken}`
+        return api(originalRequest)
+      }
       const refreshToken = localStorage.getItem('refreshToken')
 
       if (refreshToken) {
         try {
-          const { data } = await axios.post('/api/auth/refresh', {
-            refreshToken,
-          })
+          if (!refreshInFlight) {
+            refreshInFlight = axios.post('/api/auth/refresh', { refreshToken })
+              .then(({ data }) => {
+                localStorage.setItem('accessToken', data.accessToken)
+                localStorage.setItem('refreshToken', data.refreshToken)
+                return data.accessToken as string
+              })
+              .finally(() => { refreshInFlight = null })
+          }
 
-          localStorage.setItem('accessToken', data.accessToken)
-          localStorage.setItem('refreshToken', data.refreshToken)
-          originalRequest.headers.Authorization = `Bearer ${data.accessToken}`
+          const accessToken = await refreshInFlight
+          originalRequest.headers.Authorization = `Bearer ${accessToken}`
           return api(originalRequest)
         } catch {
           localStorage.removeItem('accessToken')
