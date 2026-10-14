@@ -9,6 +9,7 @@ namespace LifeOS.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Route("api/job-applications")]
 [Authorize]
 public class ApplicationsController : ControllerBase
 {
@@ -117,13 +118,16 @@ public class ApplicationsController : ControllerBase
         // Update job status too
         application.Job.Status = request.Status;
 
-        // Add history entry
-        application.StatusHistory.Add(new ApplicationStatusHistory
+        // Explicitly insert the history row; its UUID is assigned before EF tracks it.
+        var history = new ApplicationStatusHistory
         {
+            ApplicationId = application.Id,
             Status = request.Status,
             ChangedAt = DateTimeOffset.UtcNow,
             Notes = request.Notes ?? $"Status changed from {oldStatus} to {request.Status}"
-        });
+        };
+        application.StatusHistory.Add(history);
+        _context.ApplicationStatusHistories.Add(history);
 
         await _context.SaveChangesAsync(ct);
         return Ok(MapApplication(application));

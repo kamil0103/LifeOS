@@ -198,7 +198,7 @@ export default function JobsPage() {
 
   const applyToJob = async (jobId: string) => {
     try {
-      await api.post('/applications', { jobId })
+      await api.post('/job-applications', { jobId })
       notify('Application tracked!')
       loadSavedJobs()
     } catch (err) {

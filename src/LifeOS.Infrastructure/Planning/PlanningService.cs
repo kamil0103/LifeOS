@@ -89,7 +89,7 @@ public class PlanningService(AppDbContext db,ILocalDayService days,ICalendarServ
             if(linked==null){linked=new(){UserId=userId,ApplicationId=applicationId,JobId=application.JobId,EventType="followup"};db.CalendarEvents.Add(linked);}
             linked.Title="Follow up with "+application.Job.Company;linked.Description=application.Job.Title;linked.StartTime=request.DueAt.Value.ToUniversalTime();linked.EndTime=request.EndAt?.ToUniversalTime()??linked.StartTime.AddMinutes(30);linked.UpdatedAt=DateTimeOffset.UtcNow;
         }else if(linked!=null)db.CalendarEvents.Remove(linked);
-        if(!string.IsNullOrWhiteSpace(request.Notes))application.StatusHistory.Add(new(){Status=application.Status,ChangedAt=DateTimeOffset.UtcNow,Notes=request.Notes.Trim()});
+        if(!string.IsNullOrWhiteSpace(request.Notes))db.ApplicationStatusHistories.Add(new(){ApplicationId=application.Id,Status=application.Status,ChangedAt=DateTimeOffset.UtcNow,Notes=request.Notes.Trim()});
         await db.SaveChangesAsync(ct);if(transaction!=null)await transaction.CommitAsync(ct);return true;
     }
     public async Task<bool> DetailsAsync(Guid userId,Guid applicationId,ApplicationDetailsRequest request,CancellationToken ct)

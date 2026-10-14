@@ -19,6 +19,19 @@ public class PlanningTests
     [InlineData(0,1)][InlineData(1,1)][InlineData(2,3)][InlineData(3,7)][InlineData(4,14)][InlineData(5,30)]
     public void ReviewsSpaceOutWithAttempts(int attempts,int days)=>Assert.Equal(days,PlanningService.ReviewDays(attempts));
     [Fact]
+    public async Task NamespacedApplicationRouteSupportsLifecycleAndLegacyAlias()
+    {
+        using var app=new HabitApiTests.Factory();using var client=app.CreateClient();Guid jobId;
+        using(var scope=app.Services.CreateScope()){var db=scope.ServiceProvider.GetRequiredService<AppDbContext>();var job=new Job{UserId=HabitApiTests.TestAuth.UserId,Title="Test role",Company="Example"};db.Jobs.Add(job);await db.SaveChangesAsync();jobId=job.Id;}
+        var created=await client.PostAsJsonAsync("/api/job-applications",new{jobId});Assert.Equal(HttpStatusCode.OK,created.StatusCode);
+        var body=await created.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();var id=body.GetProperty("id").GetGuid();
+        Assert.Contains("Test role",await client.GetStringAsync("/api/job-applications"));
+        Assert.Equal(HttpStatusCode.OK,(await client.PutAsJsonAsync($"/api/job-applications/{id}/status",new{status="interview"})).StatusCode);
+        Assert.Contains("interview",await client.GetStringAsync($"/api/job-applications/{id}"));
+        Assert.Contains("Test role",await client.GetStringAsync("/api/applications"));
+        Assert.Equal(HttpStatusCode.NoContent,(await client.DeleteAsync($"/api/job-applications/{id}")).StatusCode);
+    }
+    [Fact]
     public async Task HabitSchedulingIsIdempotentForOneDayAndAvailableAgainNextDay()
     {
         using var db=new AppDbContext(new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
@@ -53,7 +66,7 @@ public class PlanningTests
             var application=new JobApplication{UserId=job.UserId,JobId=job.Id};db.JobApplications.Add(application);id=application.Id;await db.SaveChangesAsync();
         }
         var due=HabitApiTests.Factory.Day.Start.AddHours(10);
-        Assert.Equal(HttpStatusCode.NoContent,(await client.PutAsJsonAsync($"/api/planning/applications/{id}/follow-up",new{dueAt=due})).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent,(await client.PutAsJsonAsync($"/api/planning/applications/{id}/follow-up",new{dueAt=due,notes="Follow-up scheduled"})).StatusCode);
         Assert.Equal(HttpStatusCode.NoContent,(await client.PutAsJsonAsync($"/api/planning/applications/{id}/follow-up",new{dueAt=due.AddHours(1),endAt=due.AddHours(3)})).StatusCode);
         Guid eventId;
         using(var scope=app.Services.CreateScope()) { var db=scope.ServiceProvider.GetRequiredService<AppDbContext>();var item=Assert.Single(await db.CalendarEvents.Where(e=>e.ApplicationId==id).ToListAsync());eventId=item.Id;Assert.Equal(due.AddHours(1),item.StartTime);Assert.Equal(due.AddHours(3),item.EndTime); }
@@ -61,7 +74,7 @@ public class PlanningTests
         using(var scope=app.Services.CreateScope()) { var db=scope.ServiceProvider.GetRequiredService<AppDbContext>();Assert.Equal(due.AddHours(2).UtcDateTime,(await db.JobApplications.FindAsync(id))!.FollowUpDate);Assert.Equal("followup",(await db.CalendarEvents.FindAsync(eventId))!.EventType); }
         Assert.Equal(HttpStatusCode.NoContent,(await client.DeleteAsync($"/api/calendar/events/{eventId}")).StatusCode);
         using(var scope=app.Services.CreateScope()) { var db=scope.ServiceProvider.GetRequiredService<AppDbContext>();Assert.Null((await db.JobApplications.FindAsync(id))!.FollowUpDate); }
-        Assert.Equal(HttpStatusCode.NotFound,(await client.PutAsJsonAsync($"/api/planning/applications/{Guid.NewGuid()}/follow-up",new{dueAt=due})).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound,(await client.PutAsJsonAsync($"/api/planning/applications/{Guid.NewGuid()}/follow-up",new{dueAt=due,notes="Follow-up scheduled"})).StatusCode);
     }
     [Fact]
     public async Task ForeignDocumentsCannotBeAttached()
