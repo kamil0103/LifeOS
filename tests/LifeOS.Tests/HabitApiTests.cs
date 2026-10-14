@@ -54,7 +54,7 @@ public class HabitApiTests
         Assert.Equal(HttpStatusCode.OK, result.StatusCode);
         Assert.Contains("\"isCompleted\":true", await result.Content.ReadAsStringAsync());
     }
-    private class Factory : WebApplicationFactory<Program>
+    internal class Factory : WebApplicationFactory<Program>
     {
         public static LocalDay Day = LocalDay.At(DateTimeOffset.Parse("2026-10-15T01:00:00Z"), "America/Los_Angeles");
         private readonly string databaseName = Guid.NewGuid().ToString();
@@ -76,7 +76,7 @@ public class HabitApiTests
             });
         }
     }
-    private class TestAuth(IOptionsMonitor<AuthenticationSchemeOptions> options, ILoggerFactory logger, UrlEncoder encoder) : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)
+    internal class TestAuth(IOptionsMonitor<AuthenticationSchemeOptions> options, ILoggerFactory logger, UrlEncoder encoder) : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)
     {
         public static readonly Guid UserId = Guid.NewGuid();
         protected override Task<AuthenticateResult> HandleAuthenticateAsync() => Task.FromResult(AuthenticateResult.Success(new AuthenticationTicket(new ClaimsPrincipal(new ClaimsIdentity(new[] { new Claim(ClaimTypes.NameIdentifier, UserId.ToString()) }, "Test")), "Test")));
