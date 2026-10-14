@@ -52,22 +52,33 @@ public class AuthService : IAuthService
 
     public async Task<AuthResponse> RefreshAsync(RefreshRequest request, CancellationToken ct = default)
     {
-        var tokenHash = BCrypt.Net.BCrypt.HashPassword(request.RefreshToken);
         // Note: we cannot search by hash directly because BCrypt salts are random.
-        // For simplicity in Phase 1, we iterate recent tokens. In production, use SHA256 of token as lookup key.
+        // Preserve compatibility with existing BCrypt tokens without limiting valid sessions to the latest 50.
         var tokens = await _context.RefreshTokens
             .Include(rt => rt.User)
             .ThenInclude(u => u.Profile)
             .Where(rt => rt.RevokedAt == null && rt.ExpiresAt > DateTimeOffset.UtcNow)
             .OrderByDescending(rt => rt.CreatedAt)
-            .Take(50)
             .ToListAsync(ct);
 
         var match = tokens.FirstOrDefault(rt => BCrypt.Net.BCrypt.Verify(request.RefreshToken, rt.TokenHash));
         if (match == null)
             throw new UnauthorizedAccessException("Invalid or expired refresh token.");
 
-        return await GenerateAuthResponseAsync(match.User, ct);
+        // Consume the old token and persist its replacement in one transaction.
+        // The conditional update lets only one concurrent refresh succeed.
+        await using var transaction = await _context.Database.BeginTransactionAsync(ct);
+        var now = DateTimeOffset.UtcNow;
+        var consumed = await _context.RefreshTokens
+            .Where(rt => rt.Id == match.Id && rt.RevokedAt == null && rt.ExpiresAt > now)
+            .ExecuteUpdateAsync(setters => setters.SetProperty(rt => rt.RevokedAt, (DateTimeOffset?)now), ct);
+
+        if (consumed != 1)
+            throw new UnauthorizedAccessException("Invalid or expired refresh token.");
+
+        var response = await GenerateAuthResponseAsync(match.User, ct);
+        await transaction.CommitAsync(ct);
+        return response;
     }
 
     public async Task LogoutAsync(Guid userId, string refreshToken, CancellationToken ct = default)
@@ -75,7 +86,6 @@ public class AuthService : IAuthService
         var tokens = await _context.RefreshTokens
             .Where(rt => rt.UserId == userId && rt.RevokedAt == null)
             .OrderByDescending(rt => rt.CreatedAt)
-            .Take(50)
             .ToListAsync(ct);
 
         var match = tokens.FirstOrDefault(rt => BCrypt.Net.BCrypt.Verify(refreshToken, rt.TokenHash));
