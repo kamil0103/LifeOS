@@ -52,10 +52,14 @@ api.interceptors.response.use(
           const accessToken = await refreshInFlight
           originalRequest.headers.Authorization = `Bearer ${accessToken}`
           return api(originalRequest)
-        } catch {
-          localStorage.removeItem('accessToken')
-          localStorage.removeItem('refreshToken')
-          window.location.href = '/login'
+        } catch (refreshError) {
+          // Only a rejected refresh invalidates the session; outages preserve the tokens.
+          if (axios.isAxiosError(refreshError) && [401, 403].includes(refreshError.response?.status ?? 0)) {
+            localStorage.removeItem('accessToken')
+            localStorage.removeItem('refreshToken')
+            window.location.href = '/login'
+          }
+          return Promise.reject(refreshError)
         }
       }
     }

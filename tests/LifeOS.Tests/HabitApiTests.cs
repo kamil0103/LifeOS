@@ -21,6 +21,15 @@ namespace LifeOS.Tests;
 public class HabitApiTests
 {
     [Fact]
+    public async Task SessionRestorationUsesTheLifeOsRoute()
+    {
+        using var app=new Factory();using var client=app.CreateClient();
+        using(var scope=app.Services.CreateScope()) {var db=scope.ServiceProvider.GetRequiredService<AppDbContext>();db.Users.Add(new User{Id=TestAuth.UserId,Username="session-test",Email="session@example.invalid",PasswordHash="synthetic",Role="user"});await db.SaveChangesAsync();}
+        var session=await client.GetAsync("/api/lifeos/session");Assert.Equal(HttpStatusCode.OK,session.StatusCode);
+        var body=await session.Content.ReadAsStringAsync();Assert.Contains("session-test",body);Assert.DoesNotContain("synthetic",body);
+        Assert.Equal(HttpStatusCode.OK,(await client.GetAsync("/api/auth/me")).StatusCode);
+    }
+    [Fact]
     public async Task ForeignHabitHistoryIsNotAccessible()
     {
         using var app = new Factory();
