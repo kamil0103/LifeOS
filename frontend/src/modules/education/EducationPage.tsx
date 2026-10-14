@@ -1,3 +1,4 @@
+import { notify } from '@/lib/notify'
 import { useState, useEffect, useCallback } from 'react'
 import api from '@/lib/api'
 import { Button } from '@/components/ui/button'
@@ -78,7 +79,7 @@ export default function EducationPage() {
       loadInstitutions()
     } catch (err: any) {
       console.error(err)
-      alert(err.response?.data?.detail || 'Failed to save institution')
+      notify(err.response?.data?.detail || 'Failed to save institution')
     }
   }
 
@@ -104,7 +105,7 @@ export default function EducationPage() {
       loadInstitutions()
     } catch (err) {
       console.error(err)
-      alert('Failed to update institution')
+      notify('Failed to update institution')
     }
   }
 
@@ -126,7 +127,7 @@ export default function EducationPage() {
       loadInstitutions()
     } catch (err) {
       console.error(err)
-      alert('Failed to update degree')
+      notify('Failed to update degree')
     }
   }
 
@@ -153,7 +154,7 @@ export default function EducationPage() {
       loadInstitutions()
     } catch (err) {
       console.error(err)
-      alert('Failed to update course')
+      notify('Failed to update course')
     }
   }
 
@@ -179,7 +180,7 @@ export default function EducationPage() {
 
   const extractTranscript = async () => {
     if (!transcriptText.trim() || transcriptText.length < 50) {
-      alert('Please paste at least 50 characters of transcript text')
+      notify('Please paste at least 50 characters of transcript text')
       return
     }
     setIsExtracting(true)
@@ -247,7 +248,7 @@ export default function EducationPage() {
     setSaveError(null)
     try {
       await api.post('/transcripts/save', extractedData)
-      alert('Education data saved!')
+      notify('Education data saved!')
       setShowTranscriptModal(false)
       setTranscriptText('')
       setExtractedData(null)
@@ -482,7 +483,7 @@ export default function EducationPage() {
       {/* Transcript Review Modal */}
       {showTranscriptModal && extractedData && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => setShowTranscriptModal(false)}>
-          <div className="glass-card p-6 w-[600px] max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+          <div className="glass-card p-6 w-full max-w-[600px] mx-4 max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <h2 className="text-xl font-semibold text-white mb-4">Review Extracted Data</h2>
             
             {saveError && (
@@ -545,7 +546,7 @@ export default function EducationPage() {
       {/* Edit Institution Modal */}
       {editInst && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => setEditInst(null)}>
-          <div className="glass-card p-6 w-[440px]" onClick={e => e.stopPropagation()}>
+          <div className="glass-card p-6 w-full max-w-[440px] mx-4" onClick={e => e.stopPropagation()}>
             <h3 className="text-lg font-semibold text-white mb-4">Edit Institution</h3>
             <div className="space-y-3">
               <input type="text" placeholder="Institution Name" value={editInst.name} onChange={e => setEditInst({ ...editInst, name: e.target.value })} className="w-full px-4 py-2.5 rounded-lg border border-white/10 bg-white/5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40" />
@@ -569,7 +570,7 @@ export default function EducationPage() {
       {/* Edit Degree Modal */}
       {editDegree && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => setEditDegree(null)}>
-          <div className="glass-card p-6 w-[480px] max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+          <div className="glass-card p-6 w-full max-w-[480px] mx-4 max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <h3 className="text-lg font-semibold text-white mb-4">Edit Degree / Major</h3>
             <div className="space-y-3">
               <input type="text" placeholder="Degree Name *" value={editDegree.degreeName} onChange={e => setEditDegree({ ...editDegree, degreeName: e.target.value })} className="w-full px-4 py-2.5 rounded-lg border border-white/10 bg-white/5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40" />
@@ -607,7 +608,7 @@ export default function EducationPage() {
       {/* Edit Course Modal */}
       {editCourse && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => setEditCourse(null)}>
-          <div className="glass-card p-6 w-[480px]" onClick={e => e.stopPropagation()}>
+          <div className="glass-card p-6 w-full max-w-[480px] mx-4" onClick={e => e.stopPropagation()}>
             <h3 className="text-lg font-semibold text-white mb-4">Edit Course</h3>
             <div className="space-y-3">
               <div className="grid grid-cols-2 gap-3">

@@ -175,7 +175,7 @@ export default function CalendarPage() {
       {/* Event Form Modal */}
       {showForm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-card border rounded-lg p-6 w-[500px] max-h-[90vh] overflow-y-auto">
+          <div className="bg-card border rounded-lg p-6 w-full max-w-[500px] mx-4 max-h-[90vh] overflow-y-auto">
             <h3 className="font-semibold mb-4">
               {selectedDay ? selectedDay.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'New Event'}
             </h3>

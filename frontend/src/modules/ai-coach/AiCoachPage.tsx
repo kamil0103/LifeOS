@@ -1,3 +1,4 @@
+import { notify } from '@/lib/notify'
 import { useState, useEffect } from 'react'
 import api from '@/lib/api'
 import { Button } from '@/components/ui/button'
@@ -70,7 +71,7 @@ export default function AiCoachPage() {
       setMessages(messagesData)
     } catch (err: any) {
       if (err.response?.data?.detail) {
-        alert(err.response.data.detail)
+        notify(err.response.data.detail)
       }
     } finally {
       setIsGenerating(false)

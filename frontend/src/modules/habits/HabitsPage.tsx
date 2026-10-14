@@ -1,3 +1,4 @@
+import { notify } from '@/lib/notify'
 import { useState, useEffect } from 'react'
 import api from '@/lib/api'
 import { Button } from '@/components/ui/button'
@@ -36,34 +37,10 @@ export default function HabitsPage() {
 
   const loadHabits = () => {
     setIsLoading(true)
-    api.get('/habits')
-      .then(({ data }) => {
-        const transformed = data.map((h: any) => ({
-          ...h,
-          currentStreak: h.streak?.currentStreak ?? 0,
-          isCompleted: false // Will be checked separately
-        }))
-        setHabits(transformed)
-        // Check today's completions
-        checkCompletions(transformed)
-      })
+    api.get('/habits/today')
+      .then(({ data }) => setHabits(data))
       .catch(console.error)
       .finally(() => setIsLoading(false))
-  }
-
-  const checkCompletions = async (habitList: Habit[]) => {
-    for (const habit of habitList) {
-      try {
-        const { data: completions } = await api.get(`/habits/${habit.id}/completions?days=1`)
-        if (completions.length > 0) {
-          setHabits(prev => prev.map(h => 
-            h.id === habit.id ? { ...h, isCompleted: true } : h
-          ))
-        }
-      } catch (err) {
-        console.error(err)
-      }
-    }
   }
 
   const addHabit = async () => {
@@ -97,7 +74,7 @@ export default function HabitsPage() {
       setTimeout(() => setXpFlash(null), 2000)
     } catch (err: any) {
       if (err.response?.status === 400) {
-        alert('Already completed today!')
+        notify('Already completed today!')
       }
     } finally {
       setCompletingId(null)

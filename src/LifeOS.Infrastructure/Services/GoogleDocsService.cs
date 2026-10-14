@@ -78,51 +78,30 @@ public class GoogleDocsService : IGoogleDocsService
         return doc.Title ?? "(untitled)";
     }
 
-    public async Task SyncContentAsync(string documentId, string content, CancellationToken ct = default)
+    public async Task SyncContentAsync(string documentId, string content, CancellationToken ct = default, string section = "journal")
     {
         var service = CreateClient();
-
-        // Read current doc to find content length
         var doc = await service.Documents.Get(documentId).ExecuteAsync(ct);
-        var endIndex = doc.Body?.Content?
-            .Where(c => c.EndIndex.HasValue)
-            .Select(c => c.EndIndex!.Value)
-            .DefaultIfEmpty(1)
-            .Max() ?? 1;
-
+        var runs = doc.Body?.Content?
+            .Where(c => c.Paragraph != null)
+            .SelectMany(c => c.Paragraph.Elements ?? new List<ParagraphElement>())
+            .Where(e => e.TextRun?.Content != null && e.StartIndex.HasValue)
+            .Select(e => (Index: e.StartIndex!.Value, Text: e.TextRun!.Content!))
+            .ToList() ?? new();
+        var endIndex = doc.Body?.Content?.Where(c => c.EndIndex.HasValue)
+            .Select(c => c.EndIndex!.Value).DefaultIfEmpty(1).Max() ?? 1;
+        var region = LifeOS.Application.Services.ManagedExport.Find(runs, section, Math.Max(1, endIndex - 1));
         var requests = new List<Request>();
-
-        // Delete existing content (keep the structural newline at the end)
-        if (endIndex > 2)
-        {
-            requests.Add(new Request
-            {
-                DeleteContentRange = new DeleteContentRangeRequest
-                {
-                    Range = new Google.Apis.Docs.v1.Data.Range
-                    {
-                        StartIndex = 1,
-                        EndIndex = endIndex - 1
-                    }
-                }
-            });
-        }
-
-        // Insert new content
-        requests.Add(new Request
-        {
-            InsertText = new InsertTextRequest
-            {
-                Location = new Location { Index = 1 },
-                Text = content
-            }
-        });
-
+        if (region.End > region.Start)
+            requests.Add(new Request { DeleteContentRange = new DeleteContentRangeRequest
+            { Range = new Google.Apis.Docs.v1.Data.Range { StartIndex = region.Start, EndIndex = region.End } } });
+        requests.Add(new Request { InsertText = new InsertTextRequest
+        { Location = new Location { Index = region.Start }, Text = LifeOS.Application.Services.ManagedExport.Wrap(content, section) } });
         await service.Documents.BatchUpdate(new BatchUpdateDocumentRequest
         {
-            Requests = requests
+            Requests = requests,
+            WriteControl = new WriteControl { RequiredRevisionId = doc.RevisionId }
         }, documentId).ExecuteAsync(ct);
-
-        _logger.LogInformation("Synced journal to Google Doc {DocumentId}", documentId);
+        _logger.LogInformation("Synced LifeOS {Section} export", section);
     }
 }

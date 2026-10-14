@@ -1,3 +1,6 @@
+import { notify } from '@/lib/notify'
+import { useAuthStore } from '@/hooks/useAuthStore'
+import { useUnsavedChanges } from '@/hooks/useUnsavedChanges'
 import { useState, useEffect } from 'react'
 import api from '@/lib/api'
 import { Button } from '@/components/ui/button'
@@ -102,6 +105,15 @@ export default function ResumeEditorPage() {
   const [changeSummary, setChangeSummary] = useState<string[]>([])
   const [recommendations, setRecommendations] = useState<ResumeRecommendation[]>([])
 
+  const [savedSnapshot, setSavedSnapshot] = useState('')
+  const userId = useAuthStore(state => state.user?.id)
+  const draftKey = 'lifeos-resume-draft-' + userId
+  const dirty = !!resumeData && !!savedSnapshot && JSON.stringify(resumeData) !== savedSnapshot
+  useUnsavedChanges(dirty)
+  useEffect(() => {
+    if (dirty && resumeData) sessionStorage.setItem(draftKey, JSON.stringify(resumeData))
+  }, [dirty, resumeData, draftKey])
+
   useEffect(() => {
     loadData()
     loadSavedJobs()
@@ -120,12 +132,12 @@ export default function ResumeEditorPage() {
     if (!selectedJobId) return
     setIsCheckingAts(true)
     try {
-      const { data } = await api.post('/ats/check', { jobId: selectedJobId })
+      const { data } = await api.post('/ats/check', { jobId: selectedJobId, resumeData: JSON.stringify(resumeData) })
       setAtsResult(data)
       setShowAtsModal(true)
     } catch (err) {
       console.error(err)
-      alert('ATS check failed')
+      notify('ATS check failed')
     } finally {
       setIsCheckingAts(false)
     }
@@ -164,7 +176,7 @@ export default function ResumeEditorPage() {
       }
     } catch (err: any) {
       console.error(err)
-      alert(err?.response?.data?.detail || 'Resume tailoring failed')
+      notify(err?.response?.data?.detail || 'Resume tailoring failed')
     } finally {
       setIsTailoring(false)
     }
@@ -204,10 +216,16 @@ export default function ResumeEditorPage() {
       // Always fetch latest live resume data by default so transcript/job/skill additions reflect immediately
       const fresh = await api.get('/documents/resume-data')
       setResumeData(fresh.data)
+      setSavedSnapshot(JSON.stringify(fresh.data))
+      const draft = sessionStorage.getItem(draftKey)
+      if (draft && window.confirm('Restore your unsaved resume draft?')) {
+        try { setResumeData(JSON.parse(draft)) } catch { sessionStorage.removeItem(draftKey) }
+      }
     } catch (err: any) {
       try {
         const fresh = await api.get('/documents/resume-data')
         setResumeData(fresh.data)
+      setSavedSnapshot(JSON.stringify(fresh.data))
       } catch (e) {
         console.error(e)
       }
@@ -218,14 +236,16 @@ export default function ResumeEditorPage() {
   }
 
   const syncLiveData = async () => {
+    if (dirty && !window.confirm('Replace the current draft with your latest profile records?')) return
     setIsLoading(true)
     try {
       const fresh = await api.get('/documents/resume-data')
       setResumeData(fresh.data)
-      alert('Resynced with latest live transcript, experience, and skills data!')
+      setSavedSnapshot(JSON.stringify(fresh.data))
+      notify('Resynced with latest live transcript, experience, and skills data!')
     } catch (err) {
       console.error(err)
-      alert('Failed to sync live data')
+      notify('Failed to sync live data')
     } finally {
       setIsLoading(false)
     }
@@ -251,7 +271,7 @@ export default function ResumeEditorPage() {
     } catch (err: any) {
       console.error(err)
       const detail = err?.response?.data?.detail || err?.response?.data?.title || err?.message || 'Unknown error'
-      alert(`Failed to generate resume: ${detail}`)
+      notify(`Failed to generate resume: ${detail}`)
     } finally {
       setIsGenerating(false)
     }
@@ -268,20 +288,25 @@ export default function ResumeEditorPage() {
       })
       const { data } = await api.get('/resume-versions')
       setVersions(data)
-      alert('Resume version saved!')
+      setSavedSnapshot(JSON.stringify(resumeData))
+      sessionStorage.removeItem(draftKey)
+      notify('Resume version saved!')
     } catch (err) {
       console.error(err)
-      alert('Failed to save version')
+      notify('Failed to save version')
     } finally {
       setIsSaving(false)
     }
   }
 
   const loadVersion = async (id: string) => {
+    if (dirty && !window.confirm('Replace your unsaved draft with this version?')) return
     try {
       const { data } = await api.get(`/resume-versions/${id}`)
       if (data.data) {
         setResumeData(data.data)
+        setSavedSnapshot(JSON.stringify(data.data))
+        sessionStorage.removeItem(draftKey)
         setActiveTab('edit')
       }
     } catch (err) {
@@ -608,7 +633,7 @@ export default function ResumeEditorPage() {
       {/* Tailor Mode Modal */}
       {showTailorModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowTailorModal(false)}>
-          <div className="bg-card border rounded-lg p-6 w-[440px]" onClick={e => e.stopPropagation()}>
+          <div className="bg-card border rounded-lg p-6 w-full max-w-[440px] mx-4" onClick={e => e.stopPropagation()}>
             <h2 className="text-xl font-semibold mb-2">Tailor Resume with AI</h2>
             <p className="text-sm text-muted-foreground mb-5">
               AI will rewrite your experience and education to best fit this job using only your real data. Nothing is fabricated.
@@ -631,7 +656,7 @@ export default function ResumeEditorPage() {
       {/* ATS Check Modal */}
       {showAtsModal && atsResult && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowAtsModal(false)}>
-          <div className="bg-card border rounded-lg p-6 w-[600px] max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+          <div className="bg-card border rounded-lg p-6 w-full max-w-[600px] mx-4 max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <h2 className="text-xl font-semibold mb-4">ATS Check Results</h2>
             <div className="text-center mb-4">
               <p className="text-4xl font-bold text-primary">{atsResult.score}%</p>

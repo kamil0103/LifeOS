@@ -59,6 +59,7 @@ builder.Services.AddSwaggerGen(c =>
 
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddHttpClient();
+builder.Services.AddScoped<ILocalDayService, LocalDayService>();
 
 // Database
 builder.Services.AddDbContext<AppDbContext>(options =>
@@ -145,6 +146,7 @@ app.MapControllers();
 app.MapGet("/health", () => Results.Ok(new { status = "healthy" }));
 
 // Auto-migrate on startup (self-hosted convenience)
+if (!app.Environment.IsEnvironment("Testing"))
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -156,3 +158,5 @@ using (var scope = app.Services.CreateScope())
 }
 
 app.Run();
+
+public partial class Program { }

@@ -1,3 +1,4 @@
+import { notify } from './notify'
 import axios from 'axios'
 
 const api = axios.create({
@@ -59,6 +60,9 @@ api.interceptors.response.use(
       }
     }
 
+    if (error.response?.status >= 500 || (!error.response && error.code !== 'ERR_CANCELED')) {
+      notify(error.response?.data?.detail || 'Could not reach LifeOS. Check your connection and try again.', 'error')
+    }
     return Promise.reject(error)
   }
 )

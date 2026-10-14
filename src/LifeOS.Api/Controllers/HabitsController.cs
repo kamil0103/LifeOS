@@ -1,3 +1,4 @@
+using LifeOS.Application.Interfaces;
 using LifeOS.Domain.Entities;
 using LifeOS.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
@@ -12,10 +13,12 @@ namespace LifeOS.Api.Controllers;
 public class HabitsController : ControllerBase
 {
     private readonly AppDbContext _context;
+    private readonly ILocalDayService _days;
 
-    public HabitsController(AppDbContext context)
+    public HabitsController(AppDbContext context, ILocalDayService days)
     {
         _context = context;
+        _days = days;
     }
 
     private Guid GetUserId()
@@ -23,6 +26,22 @@ public class HabitsController : ControllerBase
         var sub = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
             ?? User.FindFirst("sub")?.Value;
         return Guid.Parse(sub!);
+    }
+
+    [HttpGet("today")]
+    public async Task<ActionResult<object>> GetToday(CancellationToken ct)
+    {
+        var userId = GetUserId();
+        var day = await _days.TodayAsync(userId, ct);
+        var start = day.Start;
+        var end = day.End;
+        var habits = await _context.Habits.AsNoTracking()
+            .Where(h => h.UserId == userId && h.IsActive)
+            .Select(h => new { h.Id, h.Name, h.Category, h.Icon, h.Color, h.TargetValue, h.Unit, h.Frequency,
+                CurrentStreak = h.Streak != null ? h.Streak.CurrentStreak : 0,
+                IsCompleted = h.Completions.Any(c => c.CompletedAt >= start && c.CompletedAt < end) })
+            .ToListAsync(ct);
+        return Ok(habits);
     }
 
     // ==================== HABITS CRUD ====================
@@ -117,10 +136,12 @@ public class HabitsController : ControllerBase
 
         if (habit == null) return NotFound();
 
-        // Check if already completed today
-        var now = DateTimeOffset.UtcNow;
-        var todayStart = new DateTimeOffset(now.Year, now.Month, now.Day, 0, 0, 0, TimeSpan.Zero);
-        var todayEnd = todayStart.AddDays(1);
+        await using var transaction = await _context.Database.BeginTransactionAsync(ct);
+        await _context.Habits.Where(h => h.Id == id && h.UserId == userId)
+            .ExecuteUpdateAsync(setters => setters.SetProperty(h => h.UpdatedAt, DateTimeOffset.UtcNow), ct);
+        var day = await _days.TodayAsync(userId, ct);
+        var todayStart = day.Start;
+        var todayEnd = day.End;
         var alreadyCompleted = await _context.HabitCompletions
             .AnyAsync(c => c.HabitId == id && c.CompletedAt >= todayStart && c.CompletedAt < todayEnd, ct);
 
@@ -145,7 +166,7 @@ public class HabitsController : ControllerBase
             _context.Streaks.Add(streak);
         }
 
-        var yesterdayStart = todayStart.AddDays(-1);
+        var yesterdayStart = day.Offset(-1).Start;
         if (streak.LastCompletedAt.HasValue && 
             streak.LastCompletedAt.Value >= yesterdayStart && 
             streak.LastCompletedAt.Value < todayStart)
@@ -175,6 +196,7 @@ public class HabitsController : ControllerBase
         _context.XpTransactions.Add(xpTransaction);
 
         await _context.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
 
         return Ok(new HabitCompletionResult
         {
@@ -189,7 +211,10 @@ public class HabitsController : ControllerBase
     public async Task<ActionResult<List<HabitCompletion>>> GetCompletions(Guid id, [FromQuery] int days = 30, CancellationToken ct = default)
     {
         var userId = GetUserId();
-        var since = DateTimeOffset.UtcNow.AddDays(-days);
+        if (!await _context.Habits.AnyAsync(h => h.Id == id && h.UserId == userId, ct))
+            return NotFound();
+        var day = await _days.TodayAsync(userId, ct);
+        var since = day.Offset(1 - Math.Clamp(days, 1, 365)).Start;
         
         var completions = await _context.HabitCompletions
             .AsNoTracking()

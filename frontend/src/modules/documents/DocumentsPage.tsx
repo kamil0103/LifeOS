@@ -1,3 +1,4 @@
+import { notify } from '@/lib/notify'
 import { useState, useEffect } from 'react'
 import api from '@/lib/api'
 import { Button } from '@/components/ui/button'
@@ -45,7 +46,7 @@ export default function DocumentsPage() {
       window.URL.revokeObjectURL(url)
     } catch (err) {
       console.error(err)
-      alert('Download failed')
+      notify('Download failed')
     }
   }
 

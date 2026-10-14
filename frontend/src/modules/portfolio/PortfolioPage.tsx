@@ -1,3 +1,4 @@
+import { notify } from '@/lib/notify'
 import { useState, useEffect } from 'react'
 import api from '@/lib/api'
 import { Button } from '@/components/ui/button'
@@ -58,7 +59,7 @@ export default function PortfolioPage() {
       setGithubRepos(data)
     } catch (err) {
       console.error(err)
-      alert('Could not fetch GitHub repos')
+      notify('Could not fetch GitHub repos')
     } finally {
       setIsImporting(false)
     }
@@ -116,7 +117,7 @@ export default function PortfolioPage() {
       loadPortfolio()
     } catch (err) {
       console.error(err)
-      alert('Failed to update project')
+      notify('Failed to update project')
     }
   }
 
@@ -244,7 +245,7 @@ export default function PortfolioPage() {
       {/* Edit Project Modal */}
       {editProject && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setEditProject(null)}>
-          <div className="bg-card border rounded-lg p-6 w-[560px] max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+          <div className="bg-card border rounded-lg p-6 w-full max-w-[560px] mx-4 max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <h3 className="text-lg font-semibold mb-4">Edit Portfolio Project</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <input placeholder="Project Name" value={editProject.name} onChange={e => setEditProject({ ...editProject, name: e.target.value })} className="px-3 py-2 rounded-md border bg-background text-sm" />

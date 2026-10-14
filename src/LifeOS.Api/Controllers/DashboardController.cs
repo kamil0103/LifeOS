@@ -1,3 +1,4 @@
+using LifeOS.Application.Interfaces;
 using LifeOS.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -11,10 +12,12 @@ namespace LifeOS.Api.Controllers;
 public class DashboardController : ControllerBase
 {
     private readonly AppDbContext _context;
+    private readonly ILocalDayService _days;
 
-    public DashboardController(AppDbContext context)
+    public DashboardController(AppDbContext context, ILocalDayService days)
     {
         _context = context;
+        _days = days;
     }
 
     private Guid GetUserId()
@@ -24,30 +27,13 @@ public class DashboardController : ControllerBase
         return Guid.Parse(sub!);
     }
 
-    private async Task<DateTime> GetUserLocalTodayAsync(Guid userId, CancellationToken ct)
-    {
-        var profile = await _context.UserProfiles.AsNoTracking().FirstOrDefaultAsync(p => p.UserId == userId, ct);
-        var tzId = profile?.TimeZone ?? "America/Los_Angeles";
-        TimeZoneInfo tz;
-        try
-        {
-            tz = TimeZoneInfo.FindSystemTimeZoneById(tzId);
-        }
-        catch
-        {
-            tz = TimeZoneInfo.FindSystemTimeZoneById("America/Los_Angeles");
-        }
-        var localNow = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, tz);
-        return localNow.Date;
-    }
-
     [HttpGet("today")]
     public async Task<ActionResult<TodayDashboardDto>> GetToday(CancellationToken ct)
     {
         var userId = GetUserId();
-        var localToday = await GetUserLocalTodayAsync(userId, ct);
-        var todayStart = new DateTimeOffset(localToday, TimeSpan.Zero);
-        var todayEnd = todayStart.AddDays(1);
+        var day = await _days.TodayAsync(userId, ct);
+        var todayStart = day.Start;
+        var todayEnd = day.End;
 
         // Habits not completed today
         var habits = await _context.Habits
@@ -88,7 +74,7 @@ public class DashboardController : ControllerBase
         var xpInCurrentLevel = totalXp - GetXpForLevel(level);
 
         // Recent completions (last 7 days for heatmap)
-        var last7DaysStart = todayStart.AddDays(-6);
+        var last7DaysStart = day.Offset(-6).Start;
 
         var completionsByDay = await _context.HabitCompletions
             .AsNoTracking()
@@ -96,19 +82,19 @@ public class DashboardController : ControllerBase
             .ToListAsync(ct);
 
         var last7Days = Enumerable.Range(0, 7)
-            .Select(i => todayStart.AddDays(-i))
+            .Select(i => day.Offset(-i))
             .ToList();
 
         var weeklyProgress = last7Days.Select(d => new DayProgressDto
         {
-            Date = d.DateTime,
-            DayName = d.ToString("ddd"),
-            CompletionCount = completionsByDay.Count(c => c.CompletedAt >= d && c.CompletedAt < d.AddDays(1))
+            Date = d.Date,
+            DayName = d.Date.ToString("ddd"),
+            CompletionCount = completionsByDay.Count(c => c.CompletedAt >= d.Start && c.CompletedAt < d.End)
         }).ToList();
 
         return Ok(new TodayDashboardDto
         {
-            Date = todayStart.DateTime,
+            Date = day.Date,
             Habits = habits.Select(h => new TodayHabitDto
             {
                 Id = h.Id,
@@ -139,11 +125,13 @@ public class DashboardController : ControllerBase
     public async Task<ActionResult<UserStatsDto>> GetStats(CancellationToken ct)
     {
         var userId = GetUserId();
-        var localToday = await GetUserLocalTodayAsync(userId, ct);
+        var day = await _days.TodayAsync(userId, ct);
+        var start = day.Start;
+        var end = day.End;
 
         var totalHabits = await _context.Habits.CountAsync(h => h.UserId == userId && h.IsActive, ct);
         var completedToday = await _context.HabitCompletions
-            .CountAsync(c => c.Habit.UserId == userId && c.CompletedAt >= new DateTimeOffset(localToday, TimeSpan.Zero) && c.CompletedAt < new DateTimeOffset(localToday.AddDays(1), TimeSpan.Zero), ct);
+            .CountAsync(c => c.Habit.UserId == userId && c.CompletedAt >= start && c.CompletedAt < end, ct);
         var totalXp = await _context.XpTransactions
             .Where(x => x.UserId == userId)
             .SumAsync(x => x.Amount, ct);

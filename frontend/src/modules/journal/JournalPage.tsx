@@ -1,3 +1,6 @@
+import { notify } from '@/lib/notify'
+import { useUnsavedChanges } from '@/hooks/useUnsavedChanges'
+import { useAuthStore } from '@/hooks/useAuthStore'
 import { useState, useEffect } from 'react'
 import api from '@/lib/api'
 import { Button } from '@/components/ui/button'
@@ -31,6 +34,15 @@ export default function JournalPage() {
   const [editEntry, setEditEntry] = useState<JournalEntry | null>(null)
   const [form, setForm] = useState({ title: '', content: '', entryDate: '', mood: '' })
 
+  const [formSnapshot, setFormSnapshot] = useState('')
+  const userId = useAuthStore(state => state.user?.id)
+  const draftKey = 'lifeos-journal-draft-' + userId
+  const dirty = showEditor && JSON.stringify(form) !== formSnapshot
+  useUnsavedChanges(dirty)
+  useEffect(() => {
+    if (dirty) sessionStorage.setItem(draftKey, JSON.stringify(form))
+  }, [dirty, form, draftKey])
+
   const [showSettings, setShowSettings] = useState(false)
   const [settingsForm, setSettingsForm] = useState({ googleDocId: '', autoSync: false })
   const [syncStatus, setSyncStatus] = useState<{ ok: boolean; msg: string } | null>(null)
@@ -58,14 +70,24 @@ export default function JournalPage() {
     }
   }
 
-  const openNew = () => {
+  const openNew = async () => {
     setEditEntry(null)
-    setForm({ title: '', content: '', entryDate: new Date().toISOString().slice(0, 10), mood: '' })
+    let zone = 'America/Los_Angeles'
+    try { const { data } = await api.get('/profile'); zone = data.timeZone || zone } catch { /* Default for new accounts. */ }
+    const parts = new Intl.DateTimeFormat('en-US', { timeZone: zone, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date())
+    const part = (type: string) => parts.find(p => p.type === type)?.value
+    const fresh = { title: '', content: '', entryDate: `${part('year')}-${part('month')}-${part('day')}`, mood: '' }
+    setFormSnapshot(JSON.stringify(fresh))
+    const cached = sessionStorage.getItem(draftKey)
+    if (cached && window.confirm('Restore your unsaved journal draft?')) {
+      try { setForm(JSON.parse(cached)) } catch { setForm(fresh) }
+    } else setForm(fresh)
     setShowEditor(true)
   }
 
   const openEdit = (entry: JournalEntry) => {
     setEditEntry(entry)
+    setFormSnapshot(JSON.stringify({ title: entry.title, content: entry.content, entryDate: entry.entryDate.slice(0, 10), mood: entry.mood || '' }))
     setForm({
       title: entry.title,
       content: entry.content,
@@ -83,11 +105,13 @@ export default function JournalPage() {
       } else {
         await api.post('/journal', form)
       }
+      sessionStorage.removeItem(draftKey)
+      setFormSnapshot(JSON.stringify(form))
       setShowEditor(false)
       loadAll()
     } catch (err) {
       console.error(err)
-      alert('Failed to save entry')
+      notify('Failed to save entry')
     }
   }
 
@@ -188,8 +212,8 @@ export default function JournalPage() {
 
       {/* Editor Modal */}
       {showEditor && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowEditor(false)}>
-          <div className="bg-card border rounded-lg p-6 w-[640px] max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => { if (!dirty || window.confirm("Discard unsaved changes?")) setShowEditor(false) }}>
+          <div className="bg-card border rounded-lg p-6 w-full max-w-[640px] mx-4 max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <h3 className="text-lg font-semibold mb-4">{editEntry ? 'Edit Entry' : 'New Entry'}</h3>
             <div className="space-y-3">
               <div className="grid grid-cols-2 gap-3">
@@ -223,17 +247,19 @@ export default function JournalPage() {
               />
             </div>
             <div className="flex gap-2 mt-4 justify-end">
-              <Button variant="outline" onClick={() => setShowEditor(false)}>Cancel</Button>
+              <Button variant="outline" onClick={() => { if (!dirty || window.confirm("Discard unsaved changes?")) setShowEditor(false) }}>Cancel</Button>
               <Button onClick={saveEntry}>Save Entry</Button>
             </div>
           </div>
         </div>
       )}
 
+      <p className="text-xs text-muted-foreground mt-4">Google Docs sync updates the marked LifeOS export section. Text outside that section is preserved; edits inside it are replaced on the next sync.</p>
+
       {/* Settings Modal */}
       {showSettings && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowSettings(false)}>
-          <div className="bg-card border rounded-lg p-6 w-[680px] max-h-[88vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+          <div className="bg-card border rounded-lg p-6 w-full max-w-[680px] mx-4 max-h-[88vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold flex items-center gap-2">
                 <Cloud className="h-5 w-5 text-primary" />

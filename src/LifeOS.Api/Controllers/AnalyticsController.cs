@@ -1,3 +1,4 @@
+using LifeOS.Application.Interfaces;
 using LifeOS.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -11,10 +12,12 @@ namespace LifeOS.Api.Controllers;
 public class AnalyticsController : ControllerBase
 {
     private readonly AppDbContext _context;
+    private readonly ILocalDayService _days;
 
-    public AnalyticsController(AppDbContext context)
+    public AnalyticsController(AppDbContext context, ILocalDayService days)
     {
         _context = context;
+        _days = days;
     }
 
     private Guid GetUserId()
@@ -28,7 +31,8 @@ public class AnalyticsController : ControllerBase
     public async Task<ActionResult<List<object>>> GetXpTrends([FromQuery] int days = 30, CancellationToken ct = default)
     {
         var userId = GetUserId();
-        var startDate = DateTimeOffset.UtcNow.AddDays(-days).Date;
+        var day = await _days.TodayAsync(userId, ct);
+        var startDate = day.Offset(1 - Math.Clamp(days, 1, 365)).Start;
 
         var transactions = await _context.XpTransactions
             .AsNoTracking()
@@ -36,7 +40,7 @@ public class AnalyticsController : ControllerBase
             .ToListAsync(ct);
 
         var grouped = transactions
-            .GroupBy(x => x.CreatedAt.Date)
+            .GroupBy(x => day.DateOf(x.CreatedAt))
             .Select(g => new
             {
                 date = g.Key.ToString("yyyy-MM-dd"),
@@ -53,7 +57,8 @@ public class AnalyticsController : ControllerBase
     public async Task<ActionResult<List<object>>> GetHabitHeatmap([FromQuery] int days = 90, CancellationToken ct = default)
     {
         var userId = GetUserId();
-        var startDate = DateTimeOffset.UtcNow.AddDays(-days).Date;
+        var day = await _days.TodayAsync(userId, ct);
+        var startDate = day.Offset(1 - Math.Clamp(days, 1, 365)).Start;
 
         var completions = await _context.HabitCompletions
             .AsNoTracking()
@@ -62,7 +67,7 @@ public class AnalyticsController : ControllerBase
             .ToListAsync(ct);
 
         var grouped = completions
-            .GroupBy(c => c.CompletedAt.Date)
+            .GroupBy(c => day.DateOf(c.CompletedAt))
             .Select(g => new
             {
                 date = g.Key.ToString("yyyy-MM-dd"),
@@ -110,12 +115,13 @@ public class AnalyticsController : ControllerBase
             .OrderBy(a => a.SolvedAt)
             .ToListAsync(ct);
 
-        var dates = attempts.Select(a => a.SolvedAt.Date).Distinct().OrderBy(d => d).ToList();
+        var day = await _days.TodayAsync(userId, ct);
+        var dates = attempts.Select(a => day.DateOf(a.SolvedAt)).Distinct().OrderBy(d => d).ToList();
         
         int current = 0;
         int longest = 0;
         int temp = 0;
-        var today = DateTimeOffset.UtcNow.Date;
+        var today = day.Date;
         var yesterday = today.AddDays(-1);
 
         if (dates.Count > 0 && (dates.Last() == today || dates.Last() == yesterday))

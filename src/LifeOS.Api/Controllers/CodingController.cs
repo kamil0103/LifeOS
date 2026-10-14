@@ -1,3 +1,4 @@
+using LifeOS.Application.Interfaces;
 using LifeOS.Application.DTOs.Coding;
 using LifeOS.Domain.Entities;
 using LifeOS.Infrastructure.Data;
@@ -13,10 +14,12 @@ namespace LifeOS.Api.Controllers;
 public class CodingController : ControllerBase
 {
     private readonly AppDbContext _context;
+    private readonly ILocalDayService _days;
 
-    public CodingController(AppDbContext context)
+    public CodingController(AppDbContext context, ILocalDayService days)
     {
         _context = context;
+        _days = days;
     }
 
     private Guid GetUserId()
@@ -137,9 +140,10 @@ public class CodingController : ControllerBase
         };
 
         // First solve of the day bonus
-        var today = DateTimeOffset.UtcNow.Date;
+        var day = await _days.TodayAsync(userId, ct);
+        var today = day.Date;
         var solvedToday = await _context.ProblemAttempts
-            .AnyAsync(a => a.Problem.UserId == userId && a.SolvedAt.Date == today, ct);
+            .AnyAsync(a => a.Problem.UserId == userId && a.SolvedAt >= day.Start && a.SolvedAt < day.End, ct);
         if (!solvedToday)
             xpEarned += 5;
 
@@ -346,17 +350,18 @@ public class CodingController : ControllerBase
 
     private async Task<int> GetCurrentStreak(Guid userId, CancellationToken ct)
     {
-        var attempts = await _context.ProblemAttempts
+        var timestamps = await _context.ProblemAttempts
             .AsNoTracking()
             .Where(a => a.Problem.UserId == userId)
-            .Select(a => a.SolvedAt.Date)
-            .Distinct()
-            .OrderByDescending(d => d)
+            .Select(a => a.SolvedAt)
             .ToListAsync(ct);
+        var localDay = await _days.TodayAsync(userId, ct);
+        var attempts = timestamps.Select(localDay.DateOf).Distinct().OrderByDescending(d => d).ToList();
 
         if (attempts.Count == 0) return 0;
 
-        var today = DateTimeOffset.UtcNow.Date;
+        var day = await _days.TodayAsync(userId, ct);
+        var today = day.Date;
         var yesterday = today.AddDays(-1);
 
         // Check if solved today or yesterday
@@ -376,13 +381,13 @@ public class CodingController : ControllerBase
 
     private async Task<int> GetLongestStreak(Guid userId, CancellationToken ct)
     {
-        var dates = await _context.ProblemAttempts
+        var timestamps = await _context.ProblemAttempts
             .AsNoTracking()
             .Where(a => a.Problem.UserId == userId)
-            .Select(a => a.SolvedAt.Date)
-            .Distinct()
-            .OrderBy(d => d)
+            .Select(a => a.SolvedAt)
             .ToListAsync(ct);
+        var localDay = await _days.TodayAsync(userId, ct);
+        var dates = timestamps.Select(localDay.DateOf).Distinct().OrderBy(d => d).ToList();
 
         if (dates.Count == 0) return 0;
 

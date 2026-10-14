@@ -1,3 +1,4 @@
+import { notify } from '@/lib/notify'
 import { useState, useEffect } from 'react'
 import api from '@/lib/api'
 import { Button } from '@/components/ui/button'
@@ -83,7 +84,7 @@ export default function JobsPage() {
       loadSavedJobs()
     } catch (err) {
       console.error(err)
-      alert('Failed to update job')
+      notify('Failed to update job')
     }
   }
 
@@ -131,7 +132,7 @@ export default function JobsPage() {
       window.URL.revokeObjectURL(url)
     } catch (err: any) {
       console.error(err)
-      alert(err?.response?.data?.detail || 'Cover letter generation failed')
+      notify(err?.response?.data?.detail || 'Cover letter generation failed')
     } finally {
       setCoverLetterJobId(null)
     }
@@ -166,7 +167,7 @@ export default function JobsPage() {
         jobType: job.jobType,
         postedDate: job.postedDate
       })
-      alert('Job saved!')
+      notify('Job saved!')
     } catch (err) {
       console.error(err)
     }
@@ -189,7 +190,7 @@ export default function JobsPage() {
       loadSavedJobs()
     } catch (err) {
       console.error(err)
-      alert('AI analysis failed. Make sure GEMINI_API_KEY is configured.')
+      notify('AI analysis failed. Make sure GEMINI_API_KEY is configured.')
     } finally {
       setAnalyzingId(null)
     }
@@ -198,7 +199,7 @@ export default function JobsPage() {
   const applyToJob = async (jobId: string) => {
     try {
       await api.post('/applications', { jobId })
-      alert('Application tracked!')
+      notify('Application tracked!')
       loadSavedJobs()
     } catch (err) {
       console.error(err)
@@ -213,7 +214,7 @@ export default function JobsPage() {
       setShowMatchModal(true)
     } catch (err) {
       console.error(err)
-      alert('Match analysis failed')
+      notify('Match analysis failed')
     } finally {
       setAnalyzingId(null)
     }
@@ -227,7 +228,7 @@ export default function JobsPage() {
       setShowQaModal(true)
     } catch (err) {
       console.error(err)
-      alert('Interview Q&A generation failed')
+      notify('Interview Q&A generation failed')
     } finally {
       setAnalyzingId(null)
     }
@@ -241,7 +242,7 @@ export default function JobsPage() {
       setRssJobs(data)
     } catch (err) {
       console.error(err)
-      alert('RSS fetch failed')
+      notify('RSS fetch failed')
     } finally {
       setIsFetchingRss(false)
     }
@@ -255,7 +256,7 @@ export default function JobsPage() {
         link: job.link,
         company: job.company
       })
-      alert('Job imported!')
+      notify('Job imported!')
       setRssJobs(prev => prev.filter(j => j.link !== job.link))
     } catch (err) {
       console.error(err)
@@ -622,7 +623,7 @@ export default function JobsPage() {
       {/* Match Analysis Modal */}
       {showMatchModal && matchResult && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => setShowMatchModal(false)}>
-          <div className="glass-card p-6 w-[600px] max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+          <div className="glass-card p-6 w-full max-w-[600px] mx-4 max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <h2 className="text-xl font-semibold text-white mb-4">Match Analysis</h2>
             <div className="text-center mb-4">
               <p className="text-4xl font-bold text-blue-400">{matchResult.matchScore}%</p>
@@ -657,7 +658,7 @@ export default function JobsPage() {
       {/* Interview Q&A Modal */}
       {showQaModal && interviewQa && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => setShowQaModal(false)}>
-          <div className="glass-card p-6 w-[700px] max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+          <div className="glass-card p-6 w-full max-w-[700px] mx-4 max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <h2 className="text-xl font-semibold text-white mb-2">Interview Preparation</h2>
             <p className="text-sm text-white/40 mb-4">{interviewQa.roleFocus}</p>
             <p className="text-sm text-white/60 mb-4">{interviewQa.preparationTips}</p>

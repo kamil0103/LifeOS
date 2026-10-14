@@ -258,7 +258,7 @@ public class RecipesController : ControllerBase
 
         try
         {
-            await _googleDocs.SyncContentAsync(settings.GoogleDocId, content, ct);
+            await _googleDocs.SyncContentAsync(settings.GoogleDocId, content, ct, "recipes");
             settings.LastSyncAt = DateTimeOffset.UtcNow;
             await _context.SaveChangesAsync(ct);
             return Ok(new { success = true, recipesSynced = recipes.Count, syncedAt = settings.LastSyncAt });
@@ -280,7 +280,7 @@ public class RecipesController : ControllerBase
 
             var recipes = await _context.Recipes.AsNoTracking().Include(r => r.Ingredients).Include(r => r.Steps)
                 .Where(r => r.UserId == userId).OrderBy(r => r.Name).ToListAsync(ct);
-            await _googleDocs.SyncContentAsync(settings.GoogleDocId, BuildRecipeDocument(recipes), ct);
+            await _googleDocs.SyncContentAsync(settings.GoogleDocId, BuildRecipeDocument(recipes), ct, "recipes");
             settings.LastSyncAt = DateTimeOffset.UtcNow;
             await _context.SaveChangesAsync(ct);
         }

@@ -1,3 +1,4 @@
+import { notify } from '@/lib/notify'
 import { useState, useEffect } from 'react'
 import api from '@/lib/api'
 import { Button } from '@/components/ui/button'
@@ -48,7 +49,7 @@ export default function SkillsPage() {
       setShowExtractModal(true)
     } catch (err) {
       console.error(err)
-      alert('AI skill extraction failed')
+      notify('AI skill extraction failed')
     } finally {
       setIsExtractingAi(false)
     }
@@ -60,10 +61,10 @@ export default function SkillsPage() {
       await api.post('/skills/save-extracted', skillsToSave)
       setShowExtractModal(false)
       loadData()
-      alert('Skills saved successfully!')
+      notify('Skills saved successfully!')
     } catch (err) {
       console.error(err)
-      alert('Failed to save extracted skills')
+      notify('Failed to save extracted skills')
     }
   }
   const [showAddSkill, setShowAddSkill] = useState(false)
@@ -308,7 +309,7 @@ export default function SkillsPage() {
       {/* Edit Skill Modal */}
       {editSkill && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setEditSkill(null)}>
-          <div className="bg-card border rounded-lg p-6 w-[420px]" onClick={e => e.stopPropagation()}>
+          <div className="bg-card border rounded-lg p-6 w-full max-w-[420px] mx-4" onClick={e => e.stopPropagation()}>
             <h3 className="text-lg font-semibold mb-4">Edit Skill</h3>
             <div className="space-y-3">
               <input placeholder="Skill Name" value={editSkill.name} onChange={e => setEditSkill({ ...editSkill, name: e.target.value })} className="w-full px-3 py-2 rounded-md border bg-background text-sm" />
@@ -331,7 +332,7 @@ export default function SkillsPage() {
       {/* Edit Certificate Modal */}
       {editCert && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setEditCert(null)}>
-          <div className="bg-card border rounded-lg p-6 w-[520px] max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+          <div className="bg-card border rounded-lg p-6 w-full max-w-[520px] mx-4 max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <h3 className="text-lg font-semibold mb-4">Edit Certificate</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <input placeholder="Certificate Name" value={editCert.name} onChange={e => setEditCert({ ...editCert, name: e.target.value })} className="px-3 py-2 rounded-md border bg-background text-sm" />
@@ -353,7 +354,7 @@ export default function SkillsPage() {
       {/* AI Extraction Modal */}
       {showExtractModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-card border rounded-lg p-6 w-[600px] max-h-[80vh] overflow-y-auto">
+          <div className="bg-card border rounded-lg p-6 w-full max-w-[600px] mx-4 max-h-[80vh] overflow-y-auto">
             <h3 className="text-lg font-semibold mb-2">Review Extracted Skills</h3>
             <p className="text-sm text-muted-foreground mb-4">Select the skills you want to add to your profile, or edit them.</p>
             <div className="space-y-2 mb-6 max-h-[50vh] overflow-y-auto">

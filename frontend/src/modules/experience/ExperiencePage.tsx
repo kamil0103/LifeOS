@@ -292,7 +292,7 @@ export default function ExperiencePage() {
       {/* Edit Work Modal */}
       {editWork && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setEditWork(null)}>
-          <div className="bg-card border rounded-lg p-6 w-[560px] max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+          <div className="bg-card border rounded-lg p-6 w-full max-w-[560px] mx-4 max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <h3 className="text-lg font-semibold mb-4">Edit Work Experience</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <input placeholder="Company" value={editWork.company} onChange={e => setEditWork({ ...editWork, company: e.target.value })} className="px-3 py-2 rounded-md border bg-background text-sm" />
@@ -317,7 +317,7 @@ export default function ExperiencePage() {
       {/* Edit Project Modal */}
       {editProj && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setEditProj(null)}>
-          <div className="bg-card border rounded-lg p-6 w-[560px] max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+          <div className="bg-card border rounded-lg p-6 w-full max-w-[560px] mx-4 max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <h3 className="text-lg font-semibold mb-4">Edit Project</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <input placeholder="Project Name" value={editProj.name} onChange={e => setEditProj({ ...editProj, name: e.target.value })} className="px-3 py-2 rounded-md border bg-background text-sm" />

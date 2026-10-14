@@ -1,3 +1,4 @@
+import { notify } from '@/lib/notify'
 import { useState, useEffect } from 'react'
 import api from '@/lib/api'
 import { Button } from '@/components/ui/button'
@@ -216,7 +217,7 @@ export default function RecipesPage() {
       loadAll()
     } catch (err) {
       console.error(err)
-      alert('Failed to save recipe')
+      notify('Failed to save recipe')
     }
   }
 
@@ -370,7 +371,7 @@ export default function RecipesPage() {
       {/* Editor Modal */}
       {showEditor && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowEditor(false)}>
-          <div className="bg-card border rounded-lg p-6 w-[780px] max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+          <div className="bg-card border rounded-lg p-6 w-full max-w-[780px] mx-4 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <h3 className="text-lg font-semibold mb-4">{editRecipe ? 'Edit Recipe' : 'New Recipe'}</h3>
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-3">
@@ -500,10 +501,12 @@ export default function RecipesPage() {
         </div>
       )}
 
+      <p className="text-xs text-muted-foreground mt-4">Google Docs sync updates the marked LifeOS export section. Text outside that section is preserved; edits inside it are replaced on the next sync.</p>
+
       {/* Settings Modal */}
       {showSettings && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowSettings(false)}>
-          <div className="bg-card border rounded-lg p-6 w-[680px] max-h-[88vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+          <div className="bg-card border rounded-lg p-6 w-full max-w-[680px] mx-4 max-h-[88vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold flex items-center gap-2">
                 <Cloud className="h-5 w-5 text-primary" />
@@ -598,7 +601,7 @@ export default function RecipesPage() {
                   <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => adjustServings(recipe, -1)} disabled={servings <= 1}>
                     <Minus className="h-3 w-3" />
                   </Button>
-                  <span className="text-sm font-medium min-w-[90px] text-center">
+                  <span className="text-sm font-medium min-w-full max-w-[90px] mx-4 text-center">
                     {servings} serving{servings !== 1 ? 's' : ''}
                   </span>
                   <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => adjustServings(recipe, 1)}>

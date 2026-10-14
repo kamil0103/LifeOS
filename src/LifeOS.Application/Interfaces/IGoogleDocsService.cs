@@ -14,7 +14,7 @@ public interface IGoogleDocsService
     Task<string> TestConnectionAsync(string documentId, CancellationToken ct = default);
 
     /// <summary>
-    /// Replaces the entire document body with the given journal content.
+    /// Updates only the marked LifeOS export section, preserving other document content.
     /// </summary>
-    Task SyncContentAsync(string documentId, string content, CancellationToken ct = default);
+    Task SyncContentAsync(string documentId, string content, CancellationToken ct = default, string section = "journal");
 }

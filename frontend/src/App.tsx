@@ -1,32 +1,34 @@
+import { Suspense, lazy } from 'react'
+import { Notices } from '@/components/ui/notices'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import AuthLayout from '@/modules/auth/AuthLayout'
-import LoginPage from '@/modules/auth/LoginPage'
-import RegisterPage from '@/modules/auth/RegisterPage'
+const LoginPage = lazy(() => import('@/modules/auth/LoginPage'))
+const RegisterPage = lazy(() => import('@/modules/auth/RegisterPage'))
 import MainLayout from '@/modules/dashboard/MainLayout'
-import DashboardPage from '@/modules/dashboard/DashboardPage'
-import ProfilePage from '@/modules/profile/ProfilePage'
-import EducationPage from '@/modules/education/EducationPage'
-import ExperiencePage from '@/modules/experience/ExperiencePage'
-import SkillsPage from '@/modules/skills/SkillsPage'
-import JobsPage from '@/modules/jobs/JobsPage'
-import ApplicationsPage from '@/modules/jobs/ApplicationsPage'
-import CompanyNotesPage from '@/modules/jobs/CompanyNotesPage'
-import HabitsPage from '@/modules/habits/HabitsPage'
-import AiCoachPage from '@/modules/ai-coach/AiCoachPage'
-import ResumeEditorPage from '@/modules/resume/ResumeEditorPage'
-import DocumentsPage from '@/modules/documents/DocumentsPage'
-import CodingTrackerPage from '@/modules/coding/CodingTrackerPage'
-import BiblePage from '@/modules/bible/BiblePage'
-import PortfolioPage from '@/modules/portfolio/PortfolioPage'
-import CalendarPage from '@/modules/calendar/CalendarPage'
-import AnalyticsPage from '@/modules/analytics/AnalyticsPage'
-import NotificationsPage from '@/modules/notifications/NotificationsPage'
-import JournalPage from '@/modules/journal/JournalPage'
-import RecipesPage from '@/modules/recipes/RecipesPage'
+const DashboardPage = lazy(() => import('@/modules/dashboard/DashboardPage'))
+const ProfilePage = lazy(() => import('@/modules/profile/ProfilePage'))
+const EducationPage = lazy(() => import('@/modules/education/EducationPage'))
+const ExperiencePage = lazy(() => import('@/modules/experience/ExperiencePage'))
+const SkillsPage = lazy(() => import('@/modules/skills/SkillsPage'))
+const JobsPage = lazy(() => import('@/modules/jobs/JobsPage'))
+const ApplicationsPage = lazy(() => import('@/modules/jobs/ApplicationsPage'))
+const CompanyNotesPage = lazy(() => import('@/modules/jobs/CompanyNotesPage'))
+const HabitsPage = lazy(() => import('@/modules/habits/HabitsPage'))
+const AiCoachPage = lazy(() => import('@/modules/ai-coach/AiCoachPage'))
+const ResumeEditorPage = lazy(() => import('@/modules/resume/ResumeEditorPage'))
+const DocumentsPage = lazy(() => import('@/modules/documents/DocumentsPage'))
+const CodingTrackerPage = lazy(() => import('@/modules/coding/CodingTrackerPage'))
+const BiblePage = lazy(() => import('@/modules/bible/BiblePage'))
+const PortfolioPage = lazy(() => import('@/modules/portfolio/PortfolioPage'))
+const CalendarPage = lazy(() => import('@/modules/calendar/CalendarPage'))
+const AnalyticsPage = lazy(() => import('@/modules/analytics/AnalyticsPage'))
+const NotificationsPage = lazy(() => import('@/modules/notifications/NotificationsPage'))
+const JournalPage = lazy(() => import('@/modules/journal/JournalPage'))
+const RecipesPage = lazy(() => import('@/modules/recipes/RecipesPage'))
 
 function App() {
   return (
-    <Routes>
+    <><Notices /><Suspense fallback={<div className="p-8 text-muted-foreground" role="status">Loading…</div>}><Routes>
       <Route element={<AuthLayout />}>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
@@ -54,7 +56,7 @@ function App() {
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
-    </Routes>
+    </Routes></Suspense></>
   )
 }
 

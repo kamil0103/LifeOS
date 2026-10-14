@@ -1,3 +1,4 @@
+import { notify } from '@/lib/notify'
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import api from '@/lib/api'
@@ -137,7 +138,7 @@ export default function DashboardPage() {
       setAiMessages(messages)
     } catch (err: any) {
       if (err.response?.data?.detail) {
-        alert(err.response.data.detail)
+        notify(err.response.data.detail)
       }
     } finally {
       setIsGeneratingMission(false)
