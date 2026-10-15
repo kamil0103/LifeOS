@@ -1,7 +1,7 @@
-import { notify } from '@/lib/notify'
 import { useUnsavedChanges } from '@/hooks/useUnsavedChanges'
 import { useAuthStore } from '@/hooks/useAuthStore'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import { useRecordActions } from '@/hooks/useRecordActions'
 import api from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Loader2, Plus, Trash2, Pencil, BookOpen, Cloud, Settings, X, CheckCircle, AlertCircle, RefreshCw } from 'lucide-react'
@@ -12,6 +12,7 @@ interface JournalEntry {
   content: string
   entryDate: string
   mood?: string
+  localDate?: string
   updatedAt: string
 }
 
@@ -26,6 +27,9 @@ interface JournalSettings {
 const MOODS = ['😊 Great', '🙂 Good', '😐 Okay', '😕 Down', '😢 Bad']
 
 export default function JournalPage() {
+  const { busy, error, setError, mutate } = useRecordActions()
+  const requestId = useRef(crypto.randomUUID())
+  const [query, setQuery] = useState('')
   const [entries, setEntries] = useState<JournalEntry[]>([])
   const [settings, setSettings] = useState<JournalSettings | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -40,8 +44,8 @@ export default function JournalPage() {
   const dirty = showEditor && JSON.stringify(form) !== formSnapshot
   useUnsavedChanges(dirty)
   useEffect(() => {
-    if (dirty) sessionStorage.setItem(draftKey, JSON.stringify(form))
-  }, [dirty, form, draftKey])
+    if (dirty) { try { sessionStorage.setItem(draftKey, JSON.stringify({ form, entryId: editEntry?.id, expectedUpdatedAt: editEntry?.updatedAt, requestId: requestId.current })) } catch { /* Keep the in-memory draft. */ } }
+  }, [dirty, form, draftKey, editEntry])
 
   const [showSettings, setShowSettings] = useState(false)
   const [settingsForm, setSettingsForm] = useState({ googleDocId: '', autoSync: false })
@@ -64,7 +68,7 @@ export default function JournalPage() {
       setSettings(settingsRes.data)
       setSettingsForm(f => ({ ...f, googleDocId: settingsRes.data.googleDocId || '', autoSync: settingsRes.data.autoSync || false }))
     } catch (err) {
-      console.error(err)
+      setError('Could not load your records or backup settings. Try again.')
     } finally {
       setIsLoading(false)
     }
@@ -74,24 +78,35 @@ export default function JournalPage() {
     setEditEntry(null)
     let zone = 'America/Los_Angeles'
     try { const { data } = await api.get('/profile'); zone = data.timeZone || zone } catch { /* Default for new accounts. */ }
+    try { new Intl.DateTimeFormat('en-US', { timeZone: zone }).format(new Date()) } catch { zone = 'America/Los_Angeles' }
     const parts = new Intl.DateTimeFormat('en-US', { timeZone: zone, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date())
     const part = (type: string) => parts.find(p => p.type === type)?.value
     const fresh = { title: '', content: '', entryDate: `${part('year')}-${part('month')}-${part('day')}`, mood: '' }
     setFormSnapshot(JSON.stringify(fresh))
+    requestId.current = crypto.randomUUID()
     const cached = sessionStorage.getItem(draftKey)
     if (cached && window.confirm('Restore your unsaved journal draft?')) {
-      try { setForm(JSON.parse(cached)) } catch { setForm(fresh) }
+      try {
+        const draft = JSON.parse(cached)
+        if (draft.form) {
+          const original = entries.find(e => e.id === draft.entryId)
+          if (draft.entryId && !original && !window.confirm('The original entry was removed. Restore this draft as a new entry?')) return
+          setEditEntry(original ? { ...original, updatedAt: draft.expectedUpdatedAt || original.updatedAt } : null)
+          requestId.current = draft.requestId || crypto.randomUUID(); setForm(draft.form)
+        } else if (window.confirm('Restore this older draft as a new entry?')) setForm(draft)
+        else setForm(fresh)
+      } catch { setForm(fresh) }
     } else setForm(fresh)
     setShowEditor(true)
   }
 
   const openEdit = (entry: JournalEntry) => {
     setEditEntry(entry)
-    setFormSnapshot(JSON.stringify({ title: entry.title, content: entry.content, entryDate: entry.entryDate.slice(0, 10), mood: entry.mood || '' }))
+    setFormSnapshot(JSON.stringify({ title: entry.title, content: entry.content, entryDate: (entry.localDate || entry.entryDate.slice(0, 10)), mood: entry.mood || '' }))
     setForm({
       title: entry.title,
       content: entry.content,
-      entryDate: entry.entryDate.slice(0, 10),
+      entryDate: (entry.localDate || entry.entryDate.slice(0, 10)),
       mood: entry.mood || '',
     })
     setShowEditor(true)
@@ -99,31 +114,24 @@ export default function JournalPage() {
 
   const saveEntry = async () => {
     if (!form.title.trim()) return
-    try {
+    return mutate(async () => {
+      const payload = { title: form.title, content: form.content, mood: form.mood, date: form.entryDate, requestId: editEntry ? undefined : requestId.current, expectedUpdatedAt: editEntry?.updatedAt }
       if (editEntry) {
-        await api.put(`/journal/${editEntry.id}`, form)
+        await api.put(`/journal/${editEntry.id}`, payload)
       } else {
-        await api.post('/journal', form)
+        await api.post('/journal', payload)
       }
       sessionStorage.removeItem(draftKey)
       setFormSnapshot(JSON.stringify(form))
       setShowEditor(false)
       loadAll()
-    } catch (err) {
-      console.error(err)
-      notify('Failed to save entry')
-    }
+    })
   }
 
-  const deleteEntry = async (id: string) => {
+  const deleteEntry = (id: string) => mutate(async () => {
     if (!confirm('Delete this journal entry?')) return
-    try {
-      await api.delete(`/journal/${id}`)
-      loadAll()
-    } catch (err) {
-      console.error(err)
-    }
-  }
+    await api.delete(`/journal/${id}`); await loadAll()
+  })
 
   const saveSettings = async () => {
     setSyncStatus(null)
@@ -163,6 +171,8 @@ export default function JournalPage() {
     }
   }
 
+  const filteredEntries = entries.filter(e => (e.title + ' ' + e.content + ' ' + (e.mood || '') + ' ' + (e.localDate || e.entryDate.slice(0, 10))).toLowerCase().includes(query.toLowerCase()))
+
   if (isLoading) {
     return (
       <div className="p-8 flex items-center justify-center min-h-screen">
@@ -173,6 +183,7 @@ export default function JournalPage() {
 
   return (
     <div className="p-8 max-w-4xl mx-auto">
+      {error && <div role="alert" className="fixed top-4 left-1/2 -translate-x-1/2 z-[70] w-[min(90vw,40rem)] bg-card border border-destructive rounded p-3 text-sm">{error} <button className="underline" onClick={loadAll}>Retry loading</button></div>}
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
@@ -210,6 +221,7 @@ export default function JournalPage() {
         </div>
       )}
 
+      <input aria-label="Search journal" placeholder="Search entries, dates or mood…" value={query} onChange={e => setQuery(e.target.value)} className="w-full border rounded bg-background p-3 mb-4" />
       {/* Editor Modal */}
       {showEditor && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => { if (!dirty || window.confirm("Discard unsaved changes?")) setShowEditor(false) }}>
@@ -248,7 +260,7 @@ export default function JournalPage() {
             </div>
             <div className="flex gap-2 mt-4 justify-end">
               <Button variant="outline" onClick={() => { if (!dirty || window.confirm("Discard unsaved changes?")) setShowEditor(false) }}>Cancel</Button>
-              <Button onClick={saveEntry}>Save Entry</Button>
+              <Button disabled={busy || !form.title.trim()} onClick={saveEntry}>Save Entry</Button>
             </div>
           </div>
         </div>
@@ -322,19 +334,19 @@ export default function JournalPage() {
 
       {/* Entries */}
       <div className="space-y-4">
-        {entries.length === 0 ? (
+        {filteredEntries.length === 0 ? (
           <div className="bg-card border rounded-lg p-12 text-center">
             <BookOpen className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-            <p className="text-muted-foreground">No journal entries yet.</p>
+            <p className="text-muted-foreground">{query ? 'No entries match your search.' : 'No journal entries yet.'}</p>
             <p className="text-sm text-muted-foreground mt-1">Write your first entry to get started.</p>
           </div>
         ) : (
-          entries.map(entry => (
+          filteredEntries.map(entry => (
             <div key={entry.id} className="bg-card border rounded-lg p-5">
               <div className="flex items-start justify-between">
                 <div>
                   <p className="text-xs text-muted-foreground">
-                    {new Date(entry.entryDate).toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                    {new Date((entry.localDate || entry.entryDate.slice(0,10)) + 'T12:00:00').toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
                     {entry.mood && <span className="ml-2">{entry.mood}</span>}
                   </p>
                   <h3 className="font-semibold mt-0.5">{entry.title}</h3>

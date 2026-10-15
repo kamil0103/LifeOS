@@ -1,3 +1,4 @@
+using LifeOS.Application.DTOs.Personal;
 using System.Text;
 using LifeOS.Application.Interfaces;
 using LifeOS.Domain.Entities;
@@ -14,12 +15,14 @@ namespace LifeOS.Api.Controllers;
 public class RecipesController : ControllerBase
 {
     private readonly AppDbContext _context;
+    private readonly IPersonalRecordService _records;
     private readonly IGoogleDocsService _googleDocs;
     private readonly ILogger<RecipesController> _logger;
 
-    public RecipesController(AppDbContext context, IGoogleDocsService googleDocs, ILogger<RecipesController> logger)
+    public RecipesController(AppDbContext context, IPersonalRecordService records, IGoogleDocsService googleDocs, ILogger<RecipesController> logger)
     {
         _context = context;
+        _records = records;
         _googleDocs = googleDocs;
         _logger = logger;
     }
@@ -62,107 +65,13 @@ public class RecipesController : ControllerBase
 
     [HttpPost]
     public async Task<ActionResult<RecipeDto>> CreateRecipe(SaveRecipeRequest request, CancellationToken ct)
-    {
-        var userId = GetUserId();
-        var recipe = new Recipe
-        {
-            UserId = userId,
-            Name = request.Name,
-            Description = request.Description,
-            Category = request.Category,
-            BaseServings = request.BaseServings > 0 ? request.BaseServings : 4,
-            PrepTime = request.PrepTime,
-            CookTime = request.CookTime,
-            Instructions = request.Instructions,
-            Ingredients = request.Ingredients.Select((ing, i) => new RecipeIngredient
-            {
-                Name = ing.Name,
-                Quantity = ing.Quantity,
-                Unit = ing.Unit,
-                Notes = ing.Notes,
-                SortOrder = i
-            }).ToList(),
-            Steps = request.Steps.Select((s, i) => new RecipeInstructionStep
-            {
-                StepNumber = i + 1,
-                StepType = s.StepType,
-                Text = s.Text,
-                VariablesJson = SerializeVariables(s.Variables)
-            }).ToList()
-        };
-
-        _context.Recipes.Add(recipe);
-        await _context.SaveChangesAsync(ct);
-        await MaybeAutoSync(userId, ct);
-        return Ok(MapRecipe(recipe));
-    }
-
+    { var result = await _records.SaveRecipeAsync(GetUserId(), null, request, ct); await MaybeAutoSync(GetUserId(), ct); return Ok(result); }
     [HttpPut("{id:guid}")]
     public async Task<ActionResult<RecipeDto>> UpdateRecipe(Guid id, SaveRecipeRequest request, CancellationToken ct)
-    {
-        var userId = GetUserId();
-        var recipe = await _context.Recipes
-            .Include(r => r.Ingredients).Include(r => r.Steps)
-            .FirstOrDefaultAsync(r => r.Id == id && r.UserId == userId, ct);
-
-        if (recipe == null) return NotFound();
-
-        recipe.Name = request.Name;
-        recipe.Description = request.Description;
-        recipe.Category = request.Category;
-        recipe.BaseServings = request.BaseServings > 0 ? request.BaseServings : recipe.BaseServings;
-        recipe.PrepTime = request.PrepTime;
-        recipe.CookTime = request.CookTime;
-        recipe.Instructions = request.Instructions;
-        recipe.UpdatedAt = DateTimeOffset.UtcNow;
-
-        // Replace ingredients: remove old ones, then explicitly ADD new ones
-        // (assigning via navigation with pre-set Guids makes EF issue UPDATEs for non-existent rows)
-        _context.RecipeIngredients.RemoveRange(recipe.Ingredients);
-        var newIngredients = request.Ingredients.Select((ing, i) => new RecipeIngredient
-        {
-            RecipeId = recipe.Id,
-            Name = ing.Name,
-            Quantity = ing.Quantity,
-            Unit = ing.Unit,
-            Notes = ing.Notes,
-            SortOrder = i
-        }).ToList();
-        _context.RecipeIngredients.AddRange(newIngredients);
-
-        // Replace steps the same way
-        _context.RecipeInstructionSteps.RemoveRange(recipe.Steps);
-        var newSteps = request.Steps.Select((s, i) => new RecipeInstructionStep
-        {
-            RecipeId = recipe.Id,
-            StepNumber = i + 1,
-            StepType = s.StepType,
-            Text = s.Text,
-            VariablesJson = SerializeVariables(s.Variables)
-        }).ToList();
-        _context.RecipeInstructionSteps.AddRange(newSteps);
-
-        await _context.SaveChangesAsync(ct);
-        recipe.Ingredients = newIngredients;
-        recipe.Steps = newSteps;
-        await MaybeAutoSync(userId, ct);
-        return Ok(MapRecipe(recipe));
-    }
-
+    { var result = await _records.SaveRecipeAsync(GetUserId(), id, request, ct); if (result == null) return NotFound(); await MaybeAutoSync(GetUserId(), ct); return Ok(result); }
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> DeleteRecipe(Guid id, CancellationToken ct)
-    {
-        var userId = GetUserId();
-        var recipe = await _context.Recipes
-            .FirstOrDefaultAsync(r => r.Id == id && r.UserId == userId, ct);
-
-        if (recipe == null) return NotFound();
-
-        _context.Recipes.Remove(recipe);
-        await _context.SaveChangesAsync(ct);
-        await MaybeAutoSync(userId, ct);
-        return NoContent();
-    }
+    { if (!await _records.DeleteRecipeAsync(GetUserId(), id, ct)) return NotFound(); await MaybeAutoSync(GetUserId(), ct); return NoContent(); }
 
     // ==================== SETTINGS ====================
 
@@ -233,7 +142,7 @@ public class RecipesController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Google Docs test connection failed");
-            return BadRequest(new ProblemDetails { Title = "Connection failed", Detail = ex.Message });
+            return BadRequest(new ProblemDetails { Title = "Connection failed", Detail = "Could not access the export document. Check its ID, sharing permissions or whether the document changed, then try again." });
         }
     }
 
@@ -266,7 +175,7 @@ public class RecipesController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Google Docs sync failed");
-            return BadRequest(new ProblemDetails { Title = "Sync failed", Detail = ex.Message });
+            return BadRequest(new ProblemDetails { Title = "Sync failed", Detail = "Could not access the export document. Check its ID, sharing permissions or whether the document changed, then try again." });
         }
     }
 
@@ -359,116 +268,5 @@ public class RecipesController : ControllerBase
         catch { return new(); }
     }
 
-    private static RecipeDto MapRecipe(Recipe r) => new()
-    {
-        Id = r.Id,
-        Name = r.Name,
-        Description = r.Description,
-        Category = r.Category,
-        BaseServings = r.BaseServings,
-        PrepTime = r.PrepTime,
-        CookTime = r.CookTime,
-        Instructions = r.Instructions,
-        UpdatedAt = r.UpdatedAt,
-        Ingredients = r.Ingredients.OrderBy(i => i.SortOrder).Select(i => new RecipeIngredientDto
-        {
-            Id = i.Id,
-            Name = i.Name,
-            Quantity = i.Quantity,
-            Unit = i.Unit,
-            Notes = i.Notes
-        }).ToList(),
-        Steps = r.Steps.OrderBy(s => s.StepNumber).Select(s => new RecipeStepDto
-        {
-            Id = s.Id,
-            StepNumber = s.StepNumber,
-            StepType = s.StepType,
-            Text = s.Text,
-            Variables = DeserializeVariables(s.VariablesJson)
-        }).ToList()
-    };
-}
-
-public class RecipeDto
-{
-    public Guid Id { get; set; }
-    public string Name { get; set; } = string.Empty;
-    public string? Description { get; set; }
-    public string? Category { get; set; }
-    public int BaseServings { get; set; }
-    public string? PrepTime { get; set; }
-    public string? CookTime { get; set; }
-    public string Instructions { get; set; } = string.Empty;
-    public DateTimeOffset UpdatedAt { get; set; }
-    public List<RecipeIngredientDto> Ingredients { get; set; } = new();
-    public List<RecipeStepDto> Steps { get; set; } = new();
-}
-
-public class RecipeStepDto
-{
-    public Guid Id { get; set; }
-    public int StepNumber { get; set; }
-    public string StepType { get; set; } = "prep";
-    public string Text { get; set; } = string.Empty;
-    public List<StepVariableDto> Variables { get; set; } = new();
-}
-
-public class StepVariableDto
-{
-    public string Name { get; set; } = string.Empty;      // cooking_time, temperature, rest_time, preheat, custom...
-    public decimal Value { get; set; }
-    public string? Unit { get; set; }                     // min, °F, °C, etc.
-    public string ScalingMode { get; set; } = "none";     // none | linear | sqrt
-}
-
-public class RecipeIngredientDto
-{
-    public Guid Id { get; set; }
-    public string Name { get; set; } = string.Empty;
-    public decimal Quantity { get; set; }
-    public string? Unit { get; set; }
-    public string? Notes { get; set; }
-}
-
-public class SaveRecipeRequest
-{
-    public string Name { get; set; } = string.Empty;
-    public string? Description { get; set; }
-    public string? Category { get; set; }
-    public int BaseServings { get; set; } = 4;
-    public string? PrepTime { get; set; }
-    public string? CookTime { get; set; }
-    public string Instructions { get; set; } = string.Empty;
-    public List<SaveIngredientRequest> Ingredients { get; set; } = new();
-    public List<SaveStepRequest> Steps { get; set; } = new();
-}
-
-public class SaveStepRequest
-{
-    public string StepType { get; set; } = "prep";
-    public string Text { get; set; } = string.Empty;
-    public List<StepVariableDto> Variables { get; set; } = new();
-}
-
-public class SaveIngredientRequest
-{
-    public string Name { get; set; } = string.Empty;
-    public decimal Quantity { get; set; }
-    public string? Unit { get; set; }
-    public string? Notes { get; set; }
-}
-
-public class RecipeSettingsDto
-{
-    public string? GoogleDocId { get; set; }
-    public bool HasServiceAccount { get; set; }
-    public string? ServiceAccountEmail { get; set; }
-    public bool AutoSync { get; set; }
-    public DateTimeOffset? LastSyncAt { get; set; }
-}
-
-public class SaveRecipeSettingsRequest
-{
-    public string? GoogleDocId { get; set; }
-    public bool AutoSync { get; set; }
+    private static RecipeDto MapRecipe(Recipe r) => LifeOS.Infrastructure.Personal.PersonalRecordService.MapRecipe(r);
 }

@@ -1,5 +1,8 @@
-import { notify } from '@/lib/notify'
-import { useState, useEffect } from 'react'
+import { useUnsavedChanges } from '@/hooks/useUnsavedChanges'
+import { useAuthStore } from '@/hooks/useAuthStore'
+import { scaleVariable } from './recipe-scaling'
+import { useState, useEffect, useRef } from 'react'
+import { useRecordActions } from '@/hooks/useRecordActions'
 import api from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Loader2, Plus, Trash2, Pencil, ChefHat, Cloud, Settings, X, CheckCircle, AlertCircle, RefreshCw, Minus, Users, ArrowUp, ArrowDown, Clock, Thermometer } from 'lucide-react'
@@ -29,6 +32,7 @@ interface RecipeStep {
 
 interface Recipe {
   id: string
+  updatedAt?: string
   name: string
   description?: string
   category?: string
@@ -54,12 +58,12 @@ const CATEGORIES = ['', 'Breakfast', 'Lunch', 'Dinner', 'Dessert', 'Snack', 'Dri
 const STEP_TYPES = ['prep', 'mix', 'cook', 'bake', 'fry', 'boil', 'simmer', 'rest', 'chill', 'serve', 'note', 'other']
 
 const VARIABLE_PRESETS: Record<string, { unit: string; scalingMode: 'none' | 'linear' | 'sqrt' }> = {
-  cooking_time: { unit: 'min', scalingMode: 'sqrt' },
-  rest_time: { unit: 'min', scalingMode: 'linear' },
-  chill_time: { unit: 'min', scalingMode: 'linear' },
-  temperature: { unit: '°F', scalingMode: 'linear' },
+  cooking_time: { unit: 'min', scalingMode: 'none' },
+  rest_time: { unit: 'min', scalingMode: 'none' },
+  chill_time: { unit: 'min', scalingMode: 'none' },
+  temperature: { unit: '°F', scalingMode: 'none' },
   preheat: { unit: '°F', scalingMode: 'none' },
-  water_temp: { unit: '°F', scalingMode: 'linear' },
+  water_temp: { unit: '°F', scalingMode: 'none' },
   pressure: { unit: 'psi', scalingMode: 'none' },
   custom: { unit: '', scalingMode: 'none' },
 }
@@ -85,17 +89,11 @@ function formatQty(qty: number): string {
   return rounded % 1 === 0 ? String(rounded) : String(rounded)
 }
 
-function scaleVariable(v: StepVariable, ratio: number): number {
-  if (v.scalingMode === 'linear') return v.value * ratio
-  if (v.scalingMode === 'sqrt') return v.value * Math.sqrt(ratio)
-  return v.value
-}
-
 function formatVariable(v: StepVariable, ratio: number): string {
   const scaled = scaleVariable(v, ratio)
   const unit = v.unit || ''
   if (unit === 'min') return `${Math.round(scaled)} min`
-  if (unit === '°F') return `${Math.round(scaled / 5) * 5}°F`
+  if (unit === '°F') return `${Math.round(scaled * 10) / 10}°F`
   if (unit === '°C') return `${Math.round(scaled)}°C`
   const rounded = Math.round(scaled * 10) / 10
   return `${rounded}${unit ? ' ' + unit : ''}`
@@ -106,6 +104,9 @@ function variableLabel(name: string): string {
 }
 
 export default function RecipesPage() {
+  const { busy, error, setError, mutate } = useRecordActions()
+  const requestId = useRef(crypto.randomUUID())
+  const [query, setQuery] = useState('')
   const [recipes, setRecipes] = useState<Recipe[]>([])
   const [settings, setSettings] = useState<RecipeSettings | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -119,6 +120,16 @@ export default function RecipesPage() {
   })
   const [ingredients, setIngredients] = useState<Ingredient[]>([])
   const [steps, setSteps] = useState<RecipeStep[]>([])
+
+  const userId = useAuthStore(state => state.user?.id) || 'current'
+  const draftKey = 'lifeos-recipe-draft:' + userId
+  const [snapshot, setSnapshot] = useState('')
+  const editorState = JSON.stringify({ form, ingredients, steps })
+  const dirty = showEditor && snapshot !== 'pending' && editorState !== snapshot
+  useEffect(() => { if (showEditor && snapshot === 'pending') setSnapshot(editorState) }, [showEditor, snapshot, editorState])
+  useUnsavedChanges(dirty)
+  useEffect(() => { if (dirty) { try { sessionStorage.setItem(draftKey, JSON.stringify({ form, ingredients, steps, entryId: editRecipe?.id, expectedUpdatedAt: editRecipe?.updatedAt, requestId: requestId.current })) } catch { /* Keep the in-memory draft. */ } } }, [dirty, editorState, draftKey, editRecipe])
+  const closeEditor = () => { if (!dirty || window.confirm('Discard unsaved recipe changes?')) { sessionStorage.removeItem(draftKey); setShowEditor(false) } }
 
   const [showSettings, setShowSettings] = useState(false)
   const [settingsForm, setSettingsForm] = useState({ googleDocId: '', autoSync: false })
@@ -141,7 +152,7 @@ export default function RecipesPage() {
       setSettings(settingsRes.data)
       setSettingsForm(f => ({ ...f, googleDocId: settingsRes.data.googleDocId || '', autoSync: settingsRes.data.autoSync || false }))
     } catch (err) {
-      console.error(err)
+      setError('Could not load your records or backup settings. Try again.')
     } finally {
       setIsLoading(false)
     }
@@ -151,22 +162,35 @@ export default function RecipesPage() {
 
   const adjustServings = (recipe: Recipe, delta: number) => {
     const current = getServings(recipe)
-    const next = Math.max(1, current + delta)
+    const next = Math.min(10000, Math.max(1, current + delta))
     setServingsMap({ ...servingsMap, [recipe.id]: next })
   }
 
   const scaledQty = (ing: Ingredient, recipe: Recipe) => {
     const target = getServings(recipe)
-    return (ing.quantity * target) / recipe.baseServings
+    return (ing.quantity * target) / Math.max(1, recipe.baseServings)
   }
 
-  const servingRatio = (recipe: Recipe) => getServings(recipe) / recipe.baseServings
+  const servingRatio = (recipe: Recipe) => getServings(recipe) / Math.max(1, recipe.baseServings)
 
   const openNew = () => {
-    setEditRecipe(null)
-    setForm({ name: '', description: '', category: '', baseServings: 4, prepTime: '', cookTime: '' })
-    setIngredients([{ name: '', quantity: 1, unit: '' }])
-    setSteps([{ stepNumber: 1, stepType: 'prep', text: '', variables: [] }])
+    const form = { name: '', description: '', category: '', baseServings: 4, prepTime: '', cookTime: '' }
+    const ingredients = [{ name: '', quantity: 1, unit: '' }]
+    const steps = [{ stepNumber: 1, stepType: 'prep', text: '', variables: [] }]
+    setEditRecipe(null); requestId.current = crypto.randomUUID(); setSnapshot(JSON.stringify({ form, ingredients, steps }))
+    let restored = false
+    try {
+      const raw = sessionStorage.getItem(draftKey)
+      if (raw && window.confirm('Restore your unsaved recipe draft?')) {
+        const draft = JSON.parse(raw), original = recipes.find(r => r.id === draft.entryId)
+        if (draft.entryId && !original && !window.confirm('The original recipe was removed. Restore as a new recipe?')) return
+        if (draft.form && Array.isArray(draft.ingredients) && Array.isArray(draft.steps)) {
+          setEditRecipe(original ? { ...original, updatedAt: draft.expectedUpdatedAt || original.updatedAt } : null)
+          requestId.current = draft.requestId || crypto.randomUUID(); setForm(draft.form); setIngredients(draft.ingredients); setSteps(draft.steps); restored = true
+        }
+      }
+    } catch { /* Start a fresh form if storage is unavailable. */ }
+    if (!restored) { setForm(form); setIngredients(ingredients); setSteps(steps) }
     setShowEditor(true)
   }
 
@@ -194,42 +218,37 @@ export default function RecipesPage() {
         ? [{ stepNumber: 1, stepType: 'note', text: recipe.instructions, variables: [] }]
         : [{ stepNumber: 1, stepType: 'prep', text: '', variables: [] }])
     }
-    setShowEditor(true)
+    setSnapshot('pending'); setShowEditor(true)
   }
 
   const saveRecipe = async () => {
     if (!form.name.trim()) return
     const payload = {
       ...form,
+      requestId: editRecipe ? undefined : requestId.current,
+      expectedUpdatedAt: editRecipe?.updatedAt,
       instructions: '', // legacy field; steps are the source of truth now
       ingredients: ingredients.filter(i => i.name.trim()),
       steps: steps
         .filter(s => s.text.trim() || s.variables.length > 0)
         .map((s, i) => ({ ...s, stepNumber: i + 1 })),
     }
-    try {
+    return mutate(async () => {
       if (editRecipe) {
         await api.put(`/recipes/${editRecipe.id}`, payload)
       } else {
         await api.post('/recipes', payload)
       }
+      sessionStorage.removeItem(draftKey)
       setShowEditor(false)
       loadAll()
-    } catch (err) {
-      console.error(err)
-      notify('Failed to save recipe')
-    }
+    })
   }
 
-  const deleteRecipe = async (id: string) => {
+  const deleteRecipe = (id: string) => mutate(async () => {
     if (!confirm('Delete this recipe?')) return
-    try {
-      await api.delete(`/recipes/${id}`)
-      loadAll()
-    } catch (err) {
-      console.error(err)
-    }
-  }
+    await api.delete(`/recipes/${id}`); await loadAll()
+  })
 
   // ===== ingredient rows =====
   const addIngredientRow = () => setIngredients([...ingredients, { name: '', quantity: 1, unit: '' }])
@@ -259,7 +278,7 @@ export default function RecipesPage() {
   // ===== step variables =====
   const addVariable = (stepIdx: number) => {
     const next = [...steps]
-    next[stepIdx].variables.push({ name: 'cooking_time', value: 30, unit: 'min', scalingMode: 'sqrt' })
+    next[stepIdx].variables.push({ name: 'cooking_time', value: 30, unit: 'min', scalingMode: 'none' })
     setSteps(next)
   }
   const removeVariable = (stepIdx: number, varIdx: number) => {
@@ -321,6 +340,8 @@ export default function RecipesPage() {
     }
   }
 
+  const filteredRecipes = recipes.filter(r => (r.name + ' ' + (r.category || '') + ' ' + r.ingredients.map(i => i.name).join(' ')).toLowerCase().includes(query.toLowerCase()))
+
   if (isLoading) {
     return (
       <div className="p-8 flex items-center justify-center min-h-screen">
@@ -331,6 +352,7 @@ export default function RecipesPage() {
 
   return (
     <div className="p-8 max-w-5xl mx-auto">
+      {error && <div role="alert" className="fixed top-4 left-1/2 -translate-x-1/2 z-[70] w-[min(90vw,40rem)] bg-card border border-destructive rounded p-3 text-sm">{error} <button className="underline" onClick={loadAll}>Retry loading</button></div>}
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
@@ -368,9 +390,11 @@ export default function RecipesPage() {
         </div>
       )}
 
+      <input aria-label="Search recipes" placeholder="Search recipes, categories or ingredients…" value={query} onChange={e => setQuery(e.target.value)} className="w-full border rounded bg-background p-3 mb-4" />
+      <p className="text-xs text-muted-foreground mb-4">Serving changes scale ingredient quantities. Temperatures stay fixed; time scaling is an estimate when enabled.</p>
       {/* Editor Modal */}
       {showEditor && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowEditor(false)}>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={closeEditor}>
           <div className="bg-card border rounded-lg p-6 w-full max-w-[780px] mx-4 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <h3 className="text-lg font-semibold mb-4">{editRecipe ? 'Edit Recipe' : 'New Recipe'}</h3>
             <div className="space-y-4">
@@ -494,8 +518,8 @@ export default function RecipesPage() {
               </div>
             </div>
             <div className="flex gap-2 mt-5 justify-end">
-              <Button variant="outline" onClick={() => setShowEditor(false)}>Cancel</Button>
-              <Button onClick={saveRecipe}>Save Recipe</Button>
+              <Button variant="outline" onClick={closeEditor}>Cancel</Button>
+              <Button disabled={busy || !form.name.trim()} onClick={saveRecipe}>Save Recipe</Button>
             </div>
           </div>
         </div>
@@ -565,14 +589,14 @@ export default function RecipesPage() {
 
       {/* Recipe cards */}
       <div className="space-y-5">
-        {recipes.length === 0 ? (
+        {filteredRecipes.length === 0 ? (
           <div className="bg-card border rounded-lg p-12 text-center">
             <ChefHat className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-            <p className="text-muted-foreground">No recipes yet.</p>
+            <p className="text-muted-foreground">{query ? 'No recipes match your search.' : 'No recipes yet.'}</p>
             <p className="text-sm text-muted-foreground mt-1">Add your first recipe to get started.</p>
           </div>
         ) : (
-          recipes.map(recipe => {
+          filteredRecipes.map(recipe => {
             const servings = getServings(recipe)
             const ratio = servingRatio(recipe)
             return (

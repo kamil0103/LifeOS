@@ -837,6 +837,9 @@ namespace LifeOS.Infrastructure.Migrations
                     b.Property<DateTimeOffset>("EntryDate")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<DateOnly?>("JournalDate")
+                        .HasColumnType("date");
+
                     b.Property<string>("Mood")
                         .HasColumnType("text");
 

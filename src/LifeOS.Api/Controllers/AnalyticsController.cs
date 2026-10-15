@@ -1,182 +1,24 @@
+using LifeOS.Application.DTOs.Analytics;
 using LifeOS.Application.Interfaces;
-using LifeOS.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-
 namespace LifeOS.Api.Controllers;
-
 [ApiController]
 [Route("api/[controller]")]
 [Authorize]
-public class AnalyticsController : ControllerBase
+public class AnalyticsController(IAnalyticsService analytics) : ControllerBase
 {
-    private readonly AppDbContext _context;
-    private readonly ILocalDayService _days;
-
-    public AnalyticsController(AppDbContext context, ILocalDayService days)
-    {
-        _context = context;
-        _days = days;
-    }
-
-    private Guid GetUserId()
-    {
-        var sub = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
-            ?? User.FindFirst("sub")?.Value;
-        return Guid.Parse(sub!);
-    }
-
+    private Guid UserId => Guid.Parse((User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier) ?? User.FindFirst("sub"))!.Value);
+    [HttpGet("report")]
+    public async Task<ActionResult<AnalyticsReportDto>> Report(int days = 30, CancellationToken ct = default) => await analytics.ReportAsync(UserId, days, ct);
     [HttpGet("xp-trends")]
-    public async Task<ActionResult<List<object>>> GetXpTrends([FromQuery] int days = 30, CancellationToken ct = default)
-    {
-        var userId = GetUserId();
-        var day = await _days.TodayAsync(userId, ct);
-        var startDate = day.Offset(1 - Math.Clamp(days, 1, 365)).Start;
-
-        var transactions = await _context.XpTransactions
-            .AsNoTracking()
-            .Where(x => x.UserId == userId && x.CreatedAt >= startDate)
-            .ToListAsync(ct);
-
-        var grouped = transactions
-            .GroupBy(x => day.DateOf(x.CreatedAt))
-            .Select(g => new
-            {
-                date = g.Key.ToString("yyyy-MM-dd"),
-                xp = g.Sum(x => x.Amount),
-                source = g.GroupBy(x => x.Source).Select(s => new { source = s.Key, count = s.Count(), xp = s.Sum(x => x.Amount) }).ToList()
-            })
-            .OrderBy(x => x.date)
-            .ToList();
-
-        return grouped.Cast<object>().ToList();
-    }
-
+    public async Task<ActionResult<List<XpDayDto>>> Xp(int days = 30, CancellationToken ct = default) => await analytics.XpAsync(UserId, days, ct);
     [HttpGet("habit-heatmap")]
-    public async Task<ActionResult<List<object>>> GetHabitHeatmap([FromQuery] int days = 90, CancellationToken ct = default)
-    {
-        var userId = GetUserId();
-        var day = await _days.TodayAsync(userId, ct);
-        var startDate = day.Offset(1 - Math.Clamp(days, 1, 365)).Start;
-
-        var completions = await _context.HabitCompletions
-            .AsNoTracking()
-            .Where(c => c.Habit.UserId == userId && c.CompletedAt >= startDate)
-            .Include(c => c.Habit)
-            .ToListAsync(ct);
-
-        var grouped = completions
-            .GroupBy(c => day.DateOf(c.CompletedAt))
-            .Select(g => new
-            {
-                date = g.Key.ToString("yyyy-MM-dd"),
-                count = g.Count(),
-                habits = g.Select(c => c.Habit.Name).Distinct().ToList()
-            })
-            .OrderBy(x => x.date)
-            .ToList();
-
-        return grouped.Cast<object>().ToList();
-    }
-
+    public async Task<ActionResult<List<HabitDayDto>>> Habits(int days = 90, CancellationToken ct = default) => await analytics.HabitsAsync(UserId, days, ct);
     [HttpGet("job-funnel")]
-    public async Task<ActionResult<object>> GetJobFunnel(CancellationToken ct)
-    {
-        var userId = GetUserId();
-        var applications = await _context.JobApplications
-            .AsNoTracking()
-            .Where(a => a.UserId == userId)
-            .ToListAsync(ct);
-
-        var statusGroups = applications
-            .GroupBy(a => a.Status)
-            .ToDictionary(g => g.Key, g => g.Count());
-
-        return new
-        {
-            saved = statusGroups.GetValueOrDefault("saved", 0),
-            applied = statusGroups.GetValueOrDefault("applied", 0),
-            phone_screen = statusGroups.GetValueOrDefault("phone_screen", 0),
-            interview = statusGroups.GetValueOrDefault("interview", 0),
-            offer = statusGroups.GetValueOrDefault("offer", 0),
-            rejected = statusGroups.GetValueOrDefault("rejected", 0),
-            total = applications.Count
-        };
-    }
-
+    public async Task<ActionResult<JobFunnelDto>> Funnel(CancellationToken ct) => await analytics.FunnelAsync(UserId, ct);
     [HttpGet("coding-streaks")]
-    public async Task<ActionResult<object>> GetCodingStreaks(CancellationToken ct)
-    {
-        var userId = GetUserId();
-        var attempts = await _context.ProblemAttempts
-            .AsNoTracking()
-            .Where(a => a.Problem.UserId == userId)
-            .OrderBy(a => a.SolvedAt)
-            .ToListAsync(ct);
-
-        var day = await _days.TodayAsync(userId, ct);
-        var dates = attempts.Select(a => day.DateOf(a.SolvedAt)).Distinct().OrderBy(d => d).ToList();
-        
-        int current = 0;
-        int longest = 0;
-        int temp = 0;
-        var today = day.Date;
-        var yesterday = today.AddDays(-1);
-
-        if (dates.Count > 0 && (dates.Last() == today || dates.Last() == yesterday))
-        {
-            current = 1;
-            for (int i = dates.Count - 2; i >= 0; i--)
-            {
-                if (dates[i] == dates[i + 1].AddDays(-1))
-                    current++;
-                else
-                    break;
-            }
-        }
-
-        temp = dates.Count > 0 ? 1 : 0;
-        for (int i = 1; i < dates.Count; i++)
-        {
-            if (dates[i] == dates[i - 1].AddDays(1))
-            {
-                temp++;
-                longest = Math.Max(longest, temp);
-            }
-            else
-            {
-                temp = 1;
-            }
-        }
-        longest = Math.Max(longest, temp);
-
-        return new
-        {
-            current,
-            longest,
-            totalDays = dates.Count,
-            totalProblems = attempts.Count
-        };
-    }
-
+    public async Task<ActionResult<CodingStreakDto>> Coding(CancellationToken ct) => await analytics.CodingAsync(UserId, ct);
     [HttpGet("overview")]
-    public async Task<ActionResult<object>> GetOverview(CancellationToken ct)
-    {
-        var userId = GetUserId();
-        var totalXp = await _context.XpTransactions.Where(x => x.UserId == userId).SumAsync(x => x.Amount, ct);
-        var habitsCount = await _context.Habits.CountAsync(h => h.UserId == userId && h.IsActive, ct);
-        var jobsCount = await _context.Jobs.CountAsync(j => j.UserId == userId, ct);
-        var codingCount = await _context.ProblemAttempts.CountAsync(a => a.Problem.UserId == userId, ct);
-        var docsCount = await _context.Documents.CountAsync(d => d.UserId == userId, ct);
-
-        return new
-        {
-            totalXp,
-            habitsCount,
-            jobsCount,
-            codingCount,
-            docsCount
-        };
-    }
+    public async Task<ActionResult<OverviewDto>> Overview(CancellationToken ct) => await analytics.OverviewAsync(UserId, ct);
 }

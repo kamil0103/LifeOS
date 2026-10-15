@@ -33,6 +33,7 @@ public class ChapterDto
 
 public class SearchResultDto
 {
+    public Guid BookId { get; set; }
     public Guid Id { get; set; }
     public string BookName { get; set; } = string.Empty;
     public string Reference { get; set; } = string.Empty;
@@ -50,6 +51,8 @@ public class DailyVerseDto
 
 public class BookmarkDto
 {
+    public Guid BookId { get; set; }
+    public int Chapter { get; set; }
     public Guid Id { get; set; }
     public Guid VerseId { get; set; }
     public string Reference { get; set; } = string.Empty;

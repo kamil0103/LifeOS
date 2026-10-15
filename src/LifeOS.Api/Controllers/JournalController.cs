@@ -1,3 +1,4 @@
+using LifeOS.Application.DTOs.Personal;
 using System.Text;
 using LifeOS.Application.Interfaces;
 using LifeOS.Domain.Entities;
@@ -14,12 +15,14 @@ namespace LifeOS.Api.Controllers;
 public class JournalController : ControllerBase
 {
     private readonly AppDbContext _context;
+    private readonly IPersonalRecordService _records;
     private readonly IGoogleDocsService _googleDocs;
     private readonly ILogger<JournalController> _logger;
 
-    public JournalController(AppDbContext context, IGoogleDocsService googleDocs, ILogger<JournalController> logger)
+    public JournalController(AppDbContext context, IPersonalRecordService records, IGoogleDocsService googleDocs, ILogger<JournalController> logger)
     {
         _context = context;
+        _records = records;
         _googleDocs = googleDocs;
         _logger = logger;
     }
@@ -34,71 +37,16 @@ public class JournalController : ControllerBase
     // ==================== ENTRIES ====================
 
     [HttpGet]
-    public async Task<ActionResult<List<JournalEntryDto>>> GetEntries(CancellationToken ct)
-    {
-        var userId = GetUserId();
-        var entries = await _context.JournalEntries
-            .AsNoTracking()
-            .Where(e => e.UserId == userId)
-            .OrderByDescending(e => e.EntryDate)
-            .ToListAsync(ct);
-
-        return Ok(entries.Select(MapEntry));
-    }
-
+    public async Task<ActionResult<List<JournalEntryDto>>> GetEntries(CancellationToken ct) => await _records.JournalAsync(GetUserId(), ct);
     [HttpPost]
     public async Task<ActionResult<JournalEntryDto>> CreateEntry(CreateJournalEntryRequest request, CancellationToken ct)
-    {
-        var userId = GetUserId();
-        var entry = new JournalEntry
-        {
-            UserId = userId,
-            Title = request.Title,
-            Content = request.Content,
-            EntryDate = request.EntryDate ?? DateTimeOffset.UtcNow,
-            Mood = request.Mood
-        };
-
-        _context.JournalEntries.Add(entry);
-        await _context.SaveChangesAsync(ct);
-        await MaybeAutoSync(userId, ct);
-        return Ok(MapEntry(entry));
-    }
-
+    { var result = await _records.SaveJournalAsync(GetUserId(), null, request, ct); await MaybeAutoSync(GetUserId(), ct); return Ok(result); }
     [HttpPut("{id:guid}")]
     public async Task<ActionResult<JournalEntryDto>> UpdateEntry(Guid id, UpdateJournalEntryRequest request, CancellationToken ct)
-    {
-        var userId = GetUserId();
-        var entry = await _context.JournalEntries
-            .FirstOrDefaultAsync(e => e.Id == id && e.UserId == userId, ct);
-
-        if (entry == null) return NotFound();
-
-        entry.Title = request.Title;
-        entry.Content = request.Content;
-        entry.EntryDate = request.EntryDate ?? entry.EntryDate;
-        entry.Mood = request.Mood;
-        entry.UpdatedAt = DateTimeOffset.UtcNow;
-
-        await _context.SaveChangesAsync(ct);
-        await MaybeAutoSync(userId, ct);
-        return Ok(MapEntry(entry));
-    }
-
+    { var result = await _records.SaveJournalAsync(GetUserId(), id, request, ct); if (result == null) return NotFound(); await MaybeAutoSync(GetUserId(), ct); return Ok(result); }
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> DeleteEntry(Guid id, CancellationToken ct)
-    {
-        var userId = GetUserId();
-        var entry = await _context.JournalEntries
-            .FirstOrDefaultAsync(e => e.Id == id && e.UserId == userId, ct);
-
-        if (entry == null) return NotFound();
-
-        _context.JournalEntries.Remove(entry);
-        await _context.SaveChangesAsync(ct);
-        await MaybeAutoSync(userId, ct);
-        return NoContent();
-    }
+    { if (!await _records.DeleteJournalAsync(GetUserId(), id, ct)) return NotFound(); await MaybeAutoSync(GetUserId(), ct); return NoContent(); }
 
     // ==================== SETTINGS ====================
 
@@ -169,7 +117,7 @@ public class JournalController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Google Docs test connection failed");
-            return BadRequest(new ProblemDetails { Title = "Connection failed", Detail = ex.Message });
+            return BadRequest(new ProblemDetails { Title = "Connection failed", Detail = "Could not access the export document. Check its ID, sharing permissions or whether the document changed, then try again." });
         }
     }
 
@@ -183,11 +131,7 @@ public class JournalController : ControllerBase
         if (!_googleDocs.IsConfigured)
             return BadRequest(new ProblemDetails { Title = "Service account missing", Detail = "The server has no Google service account key configured." });
 
-        var entries = await _context.JournalEntries
-            .AsNoTracking()
-            .Where(e => e.UserId == userId)
-            .OrderByDescending(e => e.EntryDate)
-            .ToListAsync(ct);
+        var entries = await _records.JournalAsync(userId, ct);
 
         var content = BuildJournalDocument(entries);
 
@@ -201,7 +145,7 @@ public class JournalController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Google Docs sync failed");
-            return BadRequest(new ProblemDetails { Title = "Sync failed", Detail = ex.Message });
+            return BadRequest(new ProblemDetails { Title = "Sync failed", Detail = "Could not access the export document. Check its ID, sharing permissions or whether the document changed, then try again." });
         }
     }
 
@@ -213,8 +157,7 @@ public class JournalController : ControllerBase
             if (settings?.AutoSync != true || string.IsNullOrWhiteSpace(settings.GoogleDocId) || !_googleDocs.IsConfigured)
                 return;
 
-            var entries = await _context.JournalEntries.AsNoTracking()
-                .Where(e => e.UserId == userId).OrderByDescending(e => e.EntryDate).ToListAsync(ct);
+            var entries = await _records.JournalAsync(userId, ct);
             await _googleDocs.SyncContentAsync(settings.GoogleDocId, BuildJournalDocument(entries), ct, "journal");
             settings.LastSyncAt = DateTimeOffset.UtcNow;
             await _context.SaveChangesAsync(ct);
@@ -225,7 +168,7 @@ public class JournalController : ControllerBase
         }
     }
 
-    private static string BuildJournalDocument(List<JournalEntry> entries)
+    private static string BuildJournalDocument(List<JournalEntryDto> entries)
     {
         var sb = new StringBuilder();
         sb.AppendLine("LifeOS Journal");
@@ -236,7 +179,7 @@ public class JournalController : ControllerBase
         foreach (var e in entries)
         {
             sb.AppendLine();
-            sb.AppendLine($"{e.EntryDate:dddd, MMMM d, yyyy}");
+            sb.AppendLine($"{DateOnly.Parse(e.LocalDate):dddd, MMMM d, yyyy}");
             sb.AppendLine(e.Title);
             if (!string.IsNullOrWhiteSpace(e.Mood)) sb.AppendLine($"Mood: {e.Mood}");
             sb.AppendLine();
@@ -248,56 +191,4 @@ public class JournalController : ControllerBase
         return sb.ToString();
     }
 
-    private static JournalEntryDto MapEntry(JournalEntry e) => new()
-    {
-        Id = e.Id,
-        Title = e.Title,
-        Content = e.Content,
-        EntryDate = e.EntryDate,
-        Mood = e.Mood,
-        CreatedAt = e.CreatedAt,
-        UpdatedAt = e.UpdatedAt
-    };
-}
-
-public class JournalEntryDto
-{
-    public Guid Id { get; set; }
-    public string Title { get; set; } = string.Empty;
-    public string Content { get; set; } = string.Empty;
-    public DateTimeOffset EntryDate { get; set; }
-    public string? Mood { get; set; }
-    public DateTimeOffset CreatedAt { get; set; }
-    public DateTimeOffset UpdatedAt { get; set; }
-}
-
-public class CreateJournalEntryRequest
-{
-    public string Title { get; set; } = string.Empty;
-    public string Content { get; set; } = string.Empty;
-    public DateTimeOffset? EntryDate { get; set; }
-    public string? Mood { get; set; }
-}
-
-public class UpdateJournalEntryRequest
-{
-    public string Title { get; set; } = string.Empty;
-    public string Content { get; set; } = string.Empty;
-    public DateTimeOffset? EntryDate { get; set; }
-    public string? Mood { get; set; }
-}
-
-public class JournalSettingsDto
-{
-    public string? GoogleDocId { get; set; }
-    public bool HasServiceAccount { get; set; }
-    public string? ServiceAccountEmail { get; set; }
-    public bool AutoSync { get; set; }
-    public DateTimeOffset? LastSyncAt { get; set; }
-}
-
-public class SaveJournalSettingsRequest
-{
-    public string? GoogleDocId { get; set; }
-    public bool AutoSync { get; set; }
 }

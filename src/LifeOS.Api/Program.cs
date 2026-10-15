@@ -67,6 +67,9 @@ builder.Services.AddScoped<IGitHubRepositoryClient, LifeOS.Infrastructure.Profes
 builder.Services.AddScoped<IProfessionalRecordService, LifeOS.Infrastructure.Professional.ProfessionalRecordService>();
 builder.Services.AddHttpClient("GoogleCalendar", client => client.Timeout = TimeSpan.FromSeconds(45));
 builder.Services.AddScoped<Func<IAiProvider>>(sp=>()=>sp.GetRequiredService<IAiProvider>());
+builder.Services.AddScoped<IPersonalRecordService, LifeOS.Infrastructure.Personal.PersonalRecordService>();
+builder.Services.AddScoped<IBibleReaderService, LifeOS.Infrastructure.Personal.BibleReaderService>();
+builder.Services.AddScoped<IAnalyticsService, LifeOS.Infrastructure.Personal.AnalyticsService>();
 builder.Services.AddScoped<IEducationRecordService, LifeOS.Infrastructure.Education.EducationRecordService>();
 builder.Services.AddScoped<ICodingProgressService, LifeOS.Infrastructure.Coding.CodingProgressService>();
 builder.Services.AddScoped<IAiCoachService, LifeOS.Infrastructure.Coach.AiCoachService>();
