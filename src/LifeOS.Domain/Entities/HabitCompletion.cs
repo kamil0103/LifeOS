@@ -6,6 +6,7 @@ public class HabitCompletion : BaseEntity
     public Habit Habit { get; set; } = null!;
 
     public DateTimeOffset CompletedAt { get; set; } = DateTimeOffset.UtcNow;
+    public bool IsCompleted { get; set; } = true; // Existing rows represent completed habits
     public decimal? Value { get; set; }
     public string? Notes { get; set; }
 }

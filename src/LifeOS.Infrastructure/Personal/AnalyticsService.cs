@@ -17,7 +17,7 @@ public class AnalyticsService(AppDbContext db, ILocalDayService days) : IAnalyti
     private async Task<List<HabitDayDto>> HabitsAsync(Guid userId, int count, LocalDay day, CancellationToken ct)
     {
         count = Math.Clamp(count, 1, 365); var start = day.Offset(1 - count).Start;
-        var rows = await db.HabitCompletions.AsNoTracking().Where(x => x.Habit.UserId == userId && x.CompletedAt >= start && x.CompletedAt < day.End).Select(x => new { x.HabitId, x.Habit.Name, x.CompletedAt }).ToListAsync(ct);
+        var rows = await db.HabitCompletions.AsNoTracking().Where(x => x.Habit.UserId == userId && x.IsCompleted && x.CompletedAt >= start && x.CompletedAt < day.End).Select(x => new { x.HabitId, x.Habit.Name, x.CompletedAt }).ToListAsync(ct);
         var groups = rows.GroupBy(x => day.DateOf(x.CompletedAt)).ToDictionary(g => g.Key, g => g.ToList());
         return Enumerable.Range(1 - count, count).Select(offset => { var date = day.Date.AddDays(offset); var items = groups.GetValueOrDefault(date) ?? [];
             return new HabitDayDto(date.ToString("yyyy-MM-dd"), items.Select(x => x.HabitId).Distinct().Count(), items.Select(x => x.Name).Distinct().OrderBy(n => n).ToList()); }).ToList();

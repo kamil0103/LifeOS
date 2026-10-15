@@ -94,6 +94,8 @@ public class AppDbContext : DbContext
             e.HasMany(a => a.StatusHistory).WithOne(h => h.Application).HasForeignKey(h => h.ApplicationId);
         });
 
+        modelBuilder.Entity<Habit>().Property(h => h.ScheduleDaysMask).HasDefaultValue(127);
+        modelBuilder.Entity<HabitCompletion>().Property(c => c.IsCompleted).HasDefaultValue(true);
         modelBuilder.Entity<Habit>(e =>
         {
             e.HasMany(h => h.Completions).WithOne(c => c.Habit).HasForeignKey(c => c.HabitId);

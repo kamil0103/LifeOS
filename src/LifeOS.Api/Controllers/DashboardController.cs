@@ -13,10 +13,12 @@ public class DashboardController : ControllerBase
 {
     private readonly AppDbContext _context;
     private readonly ILocalDayService _days;
+    private readonly IHabitService _habits;
 
-    public DashboardController(AppDbContext context, ILocalDayService days)
+    public DashboardController(AppDbContext context, ILocalDayService days, IHabitService habits)
     {
         _context = context;
+        _habits = habits;
         _days = days;
     }
 
@@ -35,21 +37,7 @@ public class DashboardController : ControllerBase
         var todayStart = day.Start;
         var todayEnd = day.End;
 
-        // Habits not completed today
-        var habits = await _context.Habits
-            .AsNoTracking()
-            .Where(h => h.UserId == userId && h.IsActive)
-            .Include(h => h.Streak)
-            .Select(h => new {
-                h.Id,
-                h.Name,
-                h.Category,
-                h.Icon,
-                h.Color,
-                h.Streak!.CurrentStreak,
-                CompletedToday = _context.HabitCompletions.Any(c => c.HabitId == h.Id && c.CompletedAt >= todayStart && c.CompletedAt < todayEnd)
-            })
-            .ToListAsync(ct);
+        var habits = await _habits.ListAsync(userId, false, true, ct);
 
         // Job stats
         var jobStats = await _context.Jobs
@@ -78,7 +66,7 @@ public class DashboardController : ControllerBase
 
         var completionsByDay = await _context.HabitCompletions
             .AsNoTracking()
-            .Where(c => c.Habit.UserId == userId && c.CompletedAt >= last7DaysStart && c.CompletedAt < todayEnd)
+            .Where(c => c.Habit.UserId == userId && c.IsCompleted && c.CompletedAt >= last7DaysStart && c.CompletedAt < todayEnd)
             .ToListAsync(ct);
 
         var last7Days = Enumerable.Range(0, 7)
@@ -89,7 +77,7 @@ public class DashboardController : ControllerBase
         {
             Date = d.Date,
             DayName = d.Date.ToString("ddd"),
-            CompletionCount = completionsByDay.Count(c => c.CompletedAt >= d.Start && c.CompletedAt < d.End)
+            CompletionCount = completionsByDay.Where(c => c.CompletedAt >= d.Start && c.CompletedAt < d.End).Select(c => c.HabitId).Distinct().Count()
         }).ToList();
 
         return Ok(new TodayDashboardDto
@@ -103,7 +91,7 @@ public class DashboardController : ControllerBase
                 Icon = h.Icon,
                 Color = h.Color,
                 CurrentStreak = h.CurrentStreak,
-                IsCompleted = h.CompletedToday
+                IsCompleted = h.IsCompleted
             }).ToList(),
             JobStats = new JobStatsDto
             {
@@ -129,9 +117,9 @@ public class DashboardController : ControllerBase
         var start = day.Start;
         var end = day.End;
 
-        var totalHabits = await _context.Habits.CountAsync(h => h.UserId == userId && h.IsActive, ct);
-        var completedToday = await _context.HabitCompletions
-            .CountAsync(c => c.Habit.UserId == userId && c.CompletedAt >= start && c.CompletedAt < end, ct);
+        var dueHabits = await _habits.ListAsync(userId, false, true, ct);
+        var totalHabits = dueHabits.Count;
+        var completedToday = dueHabits.Count(h=>h.IsCompleted);
         var totalXp = await _context.XpTransactions
             .Where(x => x.UserId == userId)
             .SumAsync(x => x.Amount, ct);

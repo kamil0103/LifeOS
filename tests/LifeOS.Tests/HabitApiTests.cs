@@ -79,6 +79,8 @@ public class HabitApiTests
                 services.AddDbContext<AppDbContext>(options => options.UseInMemoryDatabase(databaseName));
                 var days = new Mock<ILocalDayService>();
                 days.Setup(x => x.TodayAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>())).ReturnsAsync(Day);
+                var clock = new Mock<TimeProvider>(); clock.Setup(c => c.GetUtcNow()).Returns(Day.Start.AddHours(1));
+                services.RemoveAll<TimeProvider>(); services.AddSingleton(clock.Object);
                 services.RemoveAll<ILocalDayService>();
                 services.AddSingleton(days.Object);
                 services.AddAuthentication(options => { options.DefaultAuthenticateScheme = "Test"; options.DefaultChallengeScheme = "Test"; }).AddScheme<AuthenticationSchemeOptions, TestAuth>("Test", _ => { });

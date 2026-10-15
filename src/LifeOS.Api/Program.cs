@@ -61,6 +61,8 @@ builder.Services.AddSwaggerGen(c =>
 });
 
 builder.Services.AddHttpContextAccessor();
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddScoped<IHabitService, LifeOS.Infrastructure.Habits.HabitService>();
 builder.Services.AddHttpClient();
 builder.Services.AddHttpClient("PortfolioGitHub", client => client.Timeout = TimeSpan.FromSeconds(15));
 builder.Services.AddScoped<IGitHubRepositoryClient, LifeOS.Infrastructure.Professional.GitHubRepositoryClient>();

@@ -619,6 +619,11 @@ namespace LifeOS.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<int>("ScheduleDaysMask")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(127);
+
                     b.Property<decimal?>("TargetValue")
                         .HasColumnType("numeric");
 
@@ -652,6 +657,11 @@ namespace LifeOS.Infrastructure.Migrations
 
                     b.Property<Guid>("HabitId")
                         .HasColumnType("uuid");
+
+                    b.Property<bool>("IsCompleted")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true);
 
                     b.Property<string>("Notes")
                         .HasColumnType("text");

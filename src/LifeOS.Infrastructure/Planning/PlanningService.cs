@@ -1,4 +1,5 @@
 using System.Text.Json;
+using LifeOS.Application.Services;
 using LifeOS.Application.DTOs.Calendar;
 using LifeOS.Application.DTOs.Planning;
 using LifeOS.Application.Interfaces;
@@ -15,9 +16,9 @@ public class PlanningService(AppDbContext db,ILocalDayService days,ICalendarServ
     {
         var day=await days.TodayAsync(userId,ct);var start=day.Start;var end=day.End;
         var result=new DailyPlanDto{Date=day.Date.ToString("yyyy-MM-dd"),TimeZone=day.Zone.Id};
-        var habits=await db.Habits.AsNoTracking().Where(h=>h.UserId==userId && h.IsActive)
-            .Select(h=>new{h.Id,h.Name,h.Category,Completed=h.Completions.Any(c=>c.CompletedAt>=start && c.CompletedAt<end)}).ToListAsync(ct);
-        result.Actions.AddRange(habits.Select(h=>new DailyActionDto("habit:"+h.Id,"habit",h.Id,h.Name,h.Category,2,h.Completed,null,"/habits",true)));
+        var habits=await db.Habits.AsNoTracking().Where(h=>h.UserId==userId && h.IsActive).ToListAsync(ct);
+        var habitRecords=await db.HabitCompletions.AsNoTracking().Where(c=>c.Habit.UserId==userId&&c.CompletedAt>=start&&c.CompletedAt<end).ToListAsync(ct);
+        result.Actions.AddRange(habits.Where(h=>HabitSchedule.IsDue(h,day)).Select(h=>new DailyActionDto("habit:"+h.Id,"habit",h.Id,h.Name,h.TargetValue.HasValue?$"{habitRecords.Where(c=>c.HabitId==h.Id).Select(c=>c.Value??0).DefaultIfEmpty().Max()} / {h.TargetValue} {h.Unit} · Log today's total in Habits":h.Category,2,habitRecords.Any(c=>c.HabitId==h.Id&&c.IsCompleted),null,"/habits",!h.TargetValue.HasValue)));
         var applications=await db.JobApplications.AsNoTracking().Where(a=>a.UserId==userId && a.FollowUpDate!=null && a.FollowUpDate<end.UtcDateTime && a.Status!="rejected" && a.Status!="withdrawn").Include(a=>a.Job).ToListAsync(ct);
         result.Actions.AddRange(applications.Select(a=>new DailyActionDto("followup:"+a.Id,"followup",a.Id,"Follow up with "+a.Job.Company,a.Job.Title,a.FollowUpDate<start.UtcDateTime?0:1,false,new DateTimeOffset(DateTime.SpecifyKind(a.FollowUpDate!.Value,DateTimeKind.Utc)),"/jobs/applications?application="+a.Id,true)));
         var mission=await db.DailyMissions.AsNoTracking().FirstOrDefaultAsync(m=>m.UserId==userId && m.MissionDate.Date==day.Date,ct);
