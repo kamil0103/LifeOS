@@ -3,10 +3,8 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using LifeOS.Application.DTOs.Education;
 using LifeOS.Application.Interfaces;
-using LifeOS.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 using UglyToad.PdfPig;
 using UglyToad.PdfPig.DocumentLayoutAnalysis.TextExtractor;
 
@@ -17,13 +15,13 @@ namespace LifeOS.Api.Controllers;
 [Authorize]
 public class TranscriptsController : ControllerBase
 {
-    private readonly AppDbContext _context;
-    private readonly IAiProvider _aiProvider;
+    private readonly ITranscriptImportService _imports;
+    private readonly Func<IAiProvider> _aiProvider;
     private readonly ILogger<TranscriptsController> _logger;
 
-    public TranscriptsController(AppDbContext context, IAiProvider aiProvider, ILogger<TranscriptsController> logger)
+    public TranscriptsController(ITranscriptImportService imports, Func<IAiProvider> aiProvider, ILogger<TranscriptsController> logger)
     {
-        _context = context;
+        _imports = imports;
         _aiProvider = aiProvider;
         _logger = logger;
     }
@@ -89,7 +87,6 @@ public class TranscriptsController : ControllerBase
         }
 
         _logger.LogInformation("Extracted {Length} characters from uploaded file", text.Length);
-        _logger.LogDebug("First 1000 chars of extracted text: {Sample}", text.Substring(0, Math.Min(1000, text.Length)));
 
         var result = await ExtractFromText(text, ct);
         
@@ -137,24 +134,20 @@ public class TranscriptsController : ControllerBase
                 }
                 extracted = textBuilder.ToString();
             }
-            catch (Exception pdfEx)
+            catch (Exception)
             {
-                _logger.LogWarning(pdfEx, "PdfPig failed for {FileName}, falling back to regex extraction", file.FileName);
+                _logger.LogWarning("PDF parser failed; trying fallback extraction");
                 // Fallback to simple regex extraction
                 extracted = FallbackPdfExtraction(ms);
             }
 
-            _logger.LogInformation("PDF extraction: got {Length} readable characters from {FileName}", extracted.Length, file.FileName);
-            if (!string.IsNullOrEmpty(extracted))
-            {
-                _logger.LogInformation("Extracted text sample:\n{Sample}", extracted.Substring(0, Math.Min(1000, extracted.Length)));
-            }
+            _logger.LogInformation("PDF extraction: got {Length} readable characters", extracted.Length);
             
             return extracted;
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            _logger.LogError(ex, "PDF text extraction failed for {FileName}", file.FileName);
+            _logger.LogWarning("PDF text extraction failed");
             return string.Empty;
         }
     }
@@ -241,14 +234,14 @@ public class TranscriptsController : ControllerBase
         ExtractedTranscriptDto? metaResult = null;
         try
         {
-            var metaJson = await _aiProvider.CompleteJsonAsync(metaSystemPrompt, metaUserPrompt, ct);
+            var metaJson = await _aiProvider().CompleteJsonAsync(metaSystemPrompt, metaUserPrompt, ct);
             metaJson = CleanupJsonResponse(metaJson);
             _logger.LogInformation("Meta AI response length: {Length}", metaJson.Length);
             metaResult = JsonSerializer.Deserialize<ExtractedTranscriptDto>(metaJson, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            _logger.LogWarning(ex, "AI metadata extraction failed, will use local parsing only");
+            _logger.LogWarning("AI metadata extraction failed; using local parsing");
         }
 
         metaResult ??= new ExtractedTranscriptDto();
@@ -347,19 +340,18 @@ Rules:
         {
             try
             {
-                var json = await _aiProvider.CompleteJsonAsync(systemPrompt, userPrompt, ct);
+                var json = await _aiProvider().CompleteJsonAsync(systemPrompt, userPrompt, ct);
                 var cleaned = CleanupJsonResponse(json);
 
                 var courses = JsonSerializer.Deserialize<List<ExtractedCourseDto>>(cleaned, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
                 var valid = courses?.Where(c => !string.IsNullOrWhiteSpace(c.Name)).ToList() ?? new List<ExtractedCourseDto>();
                 return valid;
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                _logger.LogWarning(ex, "AI chunk extraction attempt {Attempt} failed (chunk length {Length}). Raw response logged.", attempt, chunk.Length);
+                _logger.LogWarning("AI chunk extraction attempt {Attempt} failed (chunk length {Length})", attempt, chunk.Length);
                 if (attempt == 2)
                 {
-                    _logger.LogWarning("Chunk extraction failed after retry. Chunk preview: {Preview}", chunk.Substring(0, Math.Min(200, chunk.Length)));
                     return null;
                 }
                 await Task.Delay(500, ct); // brief pause before retry
@@ -594,116 +586,6 @@ Rules:
     }
 
     [HttpPost("save")]
-    public async Task<ActionResult<object>> SaveExtracted([FromBody] SaveExtractedRequest request, CancellationToken ct)
-    {
-        var userId = GetUserId();
-
-        // Validate request
-        if (request.Institution == null || string.IsNullOrWhiteSpace(request.Institution.Name))
-            return BadRequest(new ProblemDetails { Title = "Missing institution", Detail = "Institution name is required." });
-
-        // Create or find institution
-        var institution = await _context.Institutions.FirstOrDefaultAsync(i => i.UserId == userId && i.Name == request.Institution.Name, ct);
-        if (institution == null)
-        {
-            institution = new Domain.Entities.Institution
-            {
-                UserId = userId,
-                Name = request.Institution.Name,
-                InstitutionType = request.Institution.Type ?? "other",
-                Location = request.Institution.Location
-            };
-            _context.Institutions.Add(institution);
-            await _context.SaveChangesAsync(ct);
-        }
-
-        Guid? degreeId = null;
-
-        // Create degree only if provided (community colleges may not have a degree listed)
-        if (request.Degree != null && !string.IsNullOrWhiteSpace(request.Degree.Name))
-        {
-            var degree = new Domain.Entities.Degree
-            {
-                UserId = userId,
-                InstitutionId = institution.Id,
-                DegreeName = request.Degree.Name,
-                Field = request.Degree.Field,
-                DegreeType = request.Degree.Type ?? "other",
-                Gpa = request.Degree.Gpa,
-                Honors = request.Degree.Honors
-            };
-            _context.Degrees.Add(degree);
-            await _context.SaveChangesAsync(ct);
-            degreeId = degree.Id;
-        }
-
-        // Create courses
-        if (request.Courses != null)
-        {
-            foreach (var c in request.Courses)
-            {
-                if (string.IsNullOrWhiteSpace(c.Name)) continue;
-                
-                _context.Courses.Add(new Domain.Entities.Course
-                {
-                    UserId = userId,
-                    InstitutionId = institution.Id,
-                    DegreeId = degreeId,
-                    Code = c.Code,
-                    Name = c.Name,
-                    Grade = c.Grade,
-                    Credits = decimal.TryParse(c.Credits, out var cred) ? cred : null,
-                    Term = c.Term,
-                    IsMajorRelated = true
-                });
-            }
-            await _context.SaveChangesAsync(ct);
-        }
-
-        return new { institutionId = institution.Id, degreeId = degreeId, coursesAdded = request.Courses?.Count ?? 0 };
-    }
-}
-
-public class ExtractTranscriptRequest
-{
-    public string Text { get; set; } = string.Empty;
-}
-
-public class ExtractedTranscriptDto
-{
-    public ExtractedInstitutionDto Institution { get; set; } = new();
-    public ExtractedDegreeDto Degree { get; set; } = new();
-    public List<ExtractedCourseDto> Courses { get; set; } = new();
-}
-
-public class ExtractedInstitutionDto
-{
-    public string Name { get; set; } = string.Empty;
-    public string? Type { get; set; }
-    public string? Location { get; set; }
-}
-
-public class ExtractedDegreeDto
-{
-    public string Name { get; set; } = string.Empty;
-    public string? Field { get; set; }
-    public string? Type { get; set; }
-    public string? Gpa { get; set; }
-    public string? Honors { get; set; }
-}
-
-public class ExtractedCourseDto
-{
-    public string? Code { get; set; }
-    public string Name { get; set; } = string.Empty;
-    public string? Grade { get; set; }
-    public string? Credits { get; set; }
-    public string? Term { get; set; }
-}
-
-public class SaveExtractedRequest
-{
-    public ExtractedInstitutionDto Institution { get; set; } = new();
-    public ExtractedDegreeDto Degree { get; set; } = new();
-    public List<ExtractedCourseDto> Courses { get; set; } = new();
+    public async Task<ActionResult<TranscriptImportResult>> SaveExtracted([FromBody] SaveExtractedRequest request, CancellationToken ct)
+        => Ok(await _imports.SaveAsync(GetUserId(), request, ct));
 }

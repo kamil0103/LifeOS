@@ -46,7 +46,7 @@ public class GeminiProvider : IAiProvider
 
         if (!response.IsSuccessStatusCode)
         {
-            _logger.LogError("Gemini API error: {Status} - {Body}", response.StatusCode, responseJson);
+            _logger.LogError("Gemini API error: {Status}", response.StatusCode);
             throw new InvalidOperationException($"Gemini API error: {response.StatusCode}");
         }
 
@@ -92,7 +92,7 @@ public class GeminiProvider : IAiProvider
 
         if (!response.IsSuccessStatusCode)
         {
-            _logger.LogWarning("Gemini JSON mode failed ({Status}), falling back to text mode. Body: {Body}", response.StatusCode, responseJson);
+            _logger.LogWarning("Gemini JSON mode failed ({Status}); falling back to text mode", response.StatusCode);
             
             // Fallback: call without JSON mode
             var enhancedPrompt = userPrompt + "\n\nRespond ONLY with valid JSON. Do not include markdown formatting, backticks, or explanatory text.";
@@ -110,7 +110,6 @@ public class GeminiProvider : IAiProvider
 
         var result = text ?? string.Empty;
         _logger.LogInformation("Gemini JSON response length: {Length}", result.Length);
-        _logger.LogDebug("Gemini JSON raw response: {Response}", result.Substring(0, Math.Min(500, result.Length)));
 
         return JsonRepair.CleanAndRepair(result);
     }

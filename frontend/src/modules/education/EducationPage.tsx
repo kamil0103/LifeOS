@@ -52,6 +52,7 @@ export default function EducationPage() {
   const [isDragging, setIsDragging] = useState(false)
   const [uploadProgress, setUploadProgress] = useState<string | null>(null)
   const [loadError, setLoadError] = useState('')
+  const [savingTranscript, setSavingTranscript] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
 
   // Edit modal state
@@ -246,11 +247,12 @@ export default function EducationPage() {
   }
 
   const saveExtracted = async () => {
-    if (!extractedData) return
+    if (!extractedData || savingTranscript) return
+    setSavingTranscript(true)
     setSaveError(null)
     try {
-      await api.post('/transcripts/save', extractedData)
-      notify('Education data saved!')
+      const { data } = await api.post('/transcripts/save', extractedData)
+      notify(`Saved ${data.coursesAdded} courses; skipped ${data.coursesSkipped} duplicates.`)
       setShowTranscriptModal(false)
       setTranscriptText('')
       setExtractedData(null)
@@ -258,6 +260,8 @@ export default function EducationPage() {
     } catch (err: any) {
       console.error(err)
       setSaveError(err.response?.data?.detail || 'Save failed. Please check the data and try again.')
+    } finally {
+      setSavingTranscript(false)
     }
   }
 
@@ -488,6 +492,7 @@ export default function EducationPage() {
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => setShowTranscriptModal(false)}>
           <div className="glass-card p-6 w-full max-w-[600px] mx-4 max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <h2 className="text-xl font-semibold text-white mb-4">Review Extracted Data</h2>
+            <p className="text-sm text-white/60 mb-4">Matching courses in the same term will be skipped. Existing grades and school details are preserved.</p>
             
             {saveError && (
               <div className="mb-4 text-sm text-red-400 bg-red-500/10 border border-red-500/20 p-3 rounded-lg">
@@ -535,10 +540,10 @@ export default function EducationPage() {
             <div className="flex gap-2 mt-6">
               <Button 
                 onClick={saveExtracted} 
-                disabled={!extractedData.institution?.name && !extractedData.degree?.name}
+                disabled={savingTranscript || !extractedData.institution?.name}
                 className="bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 border-0 disabled:opacity-50"
               >
-                <Save className="mr-2 h-4 w-4" /> Save to Education
+                <Save className="mr-2 h-4 w-4" /> {savingTranscript ? 'Saving…' : 'Save to Education'}
               </Button>
               <Button variant="outline" onClick={() => setShowTranscriptModal(false)} className="border-white/10 hover:bg-white/5">Cancel</Button>
             </div>

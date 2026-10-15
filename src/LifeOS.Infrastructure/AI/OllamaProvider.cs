@@ -61,7 +61,7 @@ public class OllamaProvider : IAiProvider
 
         if (!response.IsSuccessStatusCode)
         {
-            _logger.LogError("Ollama API error: {Status} - {Body}", response.StatusCode, responseJson);
+            _logger.LogError("Ollama API error: {Status}", response.StatusCode);
             throw new InvalidOperationException($"Ollama API error: {response.StatusCode}");
         }
 

@@ -70,6 +70,7 @@ builder.Services.AddScoped<Func<IAiProvider>>(sp=>()=>sp.GetRequiredService<IAiP
 builder.Services.AddScoped<IPersonalRecordService, LifeOS.Infrastructure.Personal.PersonalRecordService>();
 builder.Services.AddScoped<IBibleReaderService, LifeOS.Infrastructure.Personal.BibleReaderService>();
 builder.Services.AddScoped<IAnalyticsService, LifeOS.Infrastructure.Personal.AnalyticsService>();
+builder.Services.AddScoped<ITranscriptImportService, LifeOS.Infrastructure.Education.TranscriptImportService>();
 builder.Services.AddScoped<IEducationRecordService, LifeOS.Infrastructure.Education.EducationRecordService>();
 builder.Services.AddScoped<ICodingProgressService, LifeOS.Infrastructure.Coding.CodingProgressService>();
 builder.Services.AddScoped<IAiCoachService, LifeOS.Infrastructure.Coach.AiCoachService>();

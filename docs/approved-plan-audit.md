@@ -17,7 +17,7 @@ These are useful working features; they do not substitute for the remaining chec
 | Area | Existing support | Missing or incomplete | Source evidence |
 |---|---|---|---|
 | Habits | Daily status, target/unit fields, completion API, backend update and soft archive | Edit UI, usable schedules, numeric progress entry/display, archive list and restore. Today/planning logic treats all active habits as due daily. | `frontend/src/modules/habits/HabitsPage.tsx`; `src/LifeOS.Api/Controllers/HabitsController.cs`; `src/LifeOS.Infrastructure/Planning/PlanningService.cs` |
-| Education | Institutions, editing existing records, transcript extraction/review, degree/course APIs, owned relationships | Manual degree/course creation controls, coursework search, duplicate-review imports and atomic/idempotent transcript saves. SaveExtracted creates a fresh degree/courses and saves in stages; extraction-time deduplication does not deduplicate against stored records. | `frontend/src/modules/education/EducationPage.tsx`; `src/LifeOS.Api/Controllers/TranscriptsController.cs` |
+| Education | Institutions, editing existing records, transcript extraction/review, degree/course APIs, owned relationships | Manual degree/course creation controls, coursework search and duplicate comparison/override UI. Transcript saves are now atomic and retry-safe for normalized matching records; see the safety batch below. | `frontend/src/modules/education/EducationPage.tsx`; `src/LifeOS.Api/Controllers/TranscriptsController.cs` |
 | Experience | Work/project editing, free-text bullets, shared project records | Structured accomplishment bullets, links to demonstrated skills and per-record resume inclusion choices. Section-level resume toggles already exist. | `frontend/src/modules/experience/ExperiencePage.tsx`; `src/LifeOS.Domain/Entities/WorkExperience.cs`; `frontend/src/modules/resume/ResumeEditorPage.tsx` |
 | Skills/certificates | Manual skills, reviewed imports/deduplication, source text, proficiency, expiry labels | Evidence relationships, learning-versus-demonstrated state and expiry reminders. An expiry label is not a scheduled reminder. | `src/LifeOS.Domain/Entities/Skill.cs`; `frontend/src/modules/skills/SkillsPage.tsx`; `src/LifeOS.Infrastructure/Planning/ReminderService.cs` |
 | Coding | Attempt history, notes, review recording and spaced-review planning | Topic/category filter in the UI. The API supports category filtering, while the UI only exposes difficulty/status. | `frontend/src/modules/coding/CodingTrackerPage.tsx`; `src/LifeOS.Api/Controllers/CodingController.cs` |
@@ -37,7 +37,13 @@ These are useful working features; they do not substitute for the remaining chec
 
 ## Additional concrete safety finding
 
-`TranscriptsController.ExtractTextFromPdf` logs the first 1,000 characters of extracted transcript text. This should be removed so uploaded personal document content is not copied into application logs. This audit inspected source only, not users' transcript contents or log contents.
+Transcript controller text samples, filenames and exception payload logging have been removed in the transcript safety batch. Counts remain for diagnostics. Previously written logs have not been inspected or purged.
+
+### Transcript safety batch (October 15)
+
+Implemented: Application DTOs/service contract, transactional saves serialized per user across API instances, normalized institution/degree reuse, same-term course deduplication, all-row credit validation, accurate added/skipped counts and save-in-progress UI. Existing metadata and grades are preserved; different terms remain separate. Extraction still requires explicit user review and save.
+
+Still open: duplicate comparison/override UI, destination selection, manual degree/course creation UI and coursework search. Matching uses normalized exact institution name, degree name/field and course code (or name) plus term; it does not infer school aliases or merge records across destinations. Existing duplicates are not deleted.
 
 The transcript save flow also needs one transaction and duplicate/retry protection before it can be called a safe, completed import workflow. No existing user duplicates should be deleted automatically; a review/merge path should preserve grades, courses and provenance.
 
