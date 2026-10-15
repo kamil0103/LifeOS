@@ -17,10 +17,11 @@ public class CreateSkillRequest
     public string? Source { get; set; }
 }
 
-public class UpdateSkillRequest
+public class UpdateSkillRequest : CreateSkillRequest { }
+
+public class ExtractedSkillDto
 {
     public string Name { get; set; } = string.Empty;
     public string Category { get; set; } = "Other";
-    public string Proficiency { get; set; } = "Beginner";
-    public string? Source { get; set; }
+    public string Proficiency { get; set; } = "Intermediate";
 }

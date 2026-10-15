@@ -62,6 +62,9 @@ builder.Services.AddSwaggerGen(c =>
 
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddHttpClient();
+builder.Services.AddHttpClient("PortfolioGitHub", client => client.Timeout = TimeSpan.FromSeconds(15));
+builder.Services.AddScoped<IGitHubRepositoryClient, LifeOS.Infrastructure.Professional.GitHubRepositoryClient>();
+builder.Services.AddScoped<IProfessionalRecordService, LifeOS.Infrastructure.Professional.ProfessionalRecordService>();
 builder.Services.AddHttpClient("GoogleCalendar", client => client.Timeout = TimeSpan.FromSeconds(45));
 builder.Services.AddScoped<Func<IAiProvider>>(sp=>()=>sp.GetRequiredService<IAiProvider>());
 builder.Services.AddScoped<IEducationRecordService, LifeOS.Infrastructure.Education.EducationRecordService>();

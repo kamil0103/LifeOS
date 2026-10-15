@@ -25,14 +25,4 @@ public class CreateProjectRequest
     public bool IsPortfolioProject { get; set; } = false;
 }
 
-public class UpdateProjectRequest
-{
-    public string Name { get; set; } = string.Empty;
-    public string? Description { get; set; }
-    public string? Technologies { get; set; }
-    public string? Link { get; set; }
-    public string? StartDate { get; set; }
-    public string? EndDate { get; set; }
-    public bool IsCurrent { get; set; } = false;
-    public bool IsPortfolioProject { get; set; } = false;
-}
+public class UpdateProjectRequest : CreateProjectRequest { }

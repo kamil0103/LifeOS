@@ -1,6 +1,7 @@
-import { notify } from '@/lib/notify'
 import { useState, useEffect } from 'react'
 import api from '@/lib/api'
+import { useRecordActions } from '@/hooks/useRecordActions'
+import { useUnsavedChanges } from '@/hooks/useUnsavedChanges'
 import { Button } from '@/components/ui/button'
 import { Loader2, ExternalLink, Github, Globe, Sparkles, Pencil } from 'lucide-react'
 
@@ -29,6 +30,7 @@ interface GitHubRepo {
 }
 
 export default function PortfolioPage() {
+  const { busy, error, setError, mutate } = useRecordActions()
   const [projects, setProjects] = useState<PortfolioProject[]>([])
   const [githubRepos, setGithubRepos] = useState<GitHubRepo[]>([])
   const [githubUsername, setGithubUsername] = useState('')
@@ -45,7 +47,7 @@ export default function PortfolioPage() {
       const { data } = await api.get('/portfolio')
       setProjects(data)
     } catch (err) {
-      console.error(err)
+      setError('Could not load portfolio projects. Try again.')
     } finally {
       setIsLoading(false)
     }
@@ -55,86 +57,39 @@ export default function PortfolioPage() {
     if (!githubUsername.trim()) return
     setIsImporting(true)
     try {
-      const { data } = await api.get(`/portfolio/github/${githubUsername}/repos`)
+      const { data } = await api.get(`/portfolio/github/${encodeURIComponent(githubUsername.trim())}/repos`)
       setGithubRepos(data)
     } catch (err) {
       console.error(err)
-      notify('Could not fetch GitHub repos')
+      setError((err as any)?.response?.data?.detail || 'Could not fetch GitHub repositories. Try again.')
     } finally {
       setIsImporting(false)
     }
   }
 
-  const importRepo = async (repo: GitHubRepo) => {
-    try {
-      // Create as project first via experience/projects endpoint, then update portfolio fields
-      const { data: newProject } = await api.post('/experience/projects', {
-        name: repo.name,
-        description: repo.description || '',
-        technologies: repo.language || '',
-        link: repo.htmlUrl || '',
-        isCurrent: true
-      })
-
-      await api.put(`/portfolio/projects/${newProject.id}`, {
-        isPortfolioProject: true,
-        gitHubRepoUrl: repo.htmlUrl,
-        isFeatured: false
-      })
-
-      loadPortfolio()
-      setGithubRepos(prev => prev.filter(r => r.name !== repo.name))
-    } catch (err) {
-      console.error(err)
-    }
-  }
+  const importRepo = (repo: GitHubRepo) => mutate(async () => {
+    await api.post('/portfolio/import', { repoUrl: repo.htmlUrl })
+    setGithubRepos(prev => prev.filter(r => r.htmlUrl !== repo.htmlUrl))
+    await loadPortfolio()
+  })
 
   const [editProject, setEditProject] = useState<PortfolioProject | null>(null)
 
-  const saveEditProject = async () => {
-    if (!editProject || !editProject.name) return
-    try {
-      // Update core project fields
-      await api.put(`/experience/projects/${editProject.id}`, {
-        name: editProject.name,
-        description: editProject.description,
-        technologies: editProject.technologies,
-        link: editProject.link,
-        startDate: editProject.startDate,
-        endDate: editProject.endDate,
-        isCurrent: editProject.isCurrent,
-        isPortfolioProject: true,
-      })
-      // Update portfolio-specific fields
-      await api.put(`/portfolio/projects/${editProject.id}`, {
-        gitHubRepoUrl: editProject.gitHubRepoUrl,
-        deployedUrl: editProject.deployedUrl,
-        screenshotUrl: editProject.screenshotUrl,
-        isFeatured: editProject.isFeatured,
-        isPortfolioProject: true,
-      })
-      setEditProject(null)
-      loadPortfolio()
-    } catch (err) {
-      console.error(err)
-      notify('Failed to update project')
-    }
-  }
-
-  const toggleFeatured = async (id: string) => {
-    const project = projects.find(p => p.id === id)
-    if (!project) return
-    try {
-      await api.put(`/portfolio/projects/${id}`, {
-        ...project,
-        isFeatured: !project.isFeatured,
-        isPortfolioProject: true
-      })
-      loadPortfolio()
-    } catch (err) {
-      console.error(err)
-    }
-  }
+  const saveEditProject = () => mutate(async () => {
+    if (!editProject?.name.trim()) return
+    await api.put(`/portfolio/projects/${editProject.id}/details`, { ...editProject, isPortfolioProject: true })
+    setEditProject(null); await loadPortfolio()
+  })
+  const toggleFeatured = (id: string) => mutate(async () => {
+    const project = projects.find(p => p.id === id); if (!project) return
+    await api.put(`/portfolio/projects/${id}`, { ...project, isFeatured: !project.isFeatured, isPortfolioProject: true })
+    await loadPortfolio()
+  })
+  const syncProject = (id: string) => mutate(async () => {
+    await api.post(`/portfolio/projects/${id}/sync-github`)
+    await loadPortfolio()
+  })
+  useUnsavedChanges(!!editProject && JSON.stringify(editProject) !== JSON.stringify(projects.find(p => p.id === editProject.id)))
 
   if (isLoading) {
     return (
@@ -146,6 +101,7 @@ export default function PortfolioPage() {
 
   return (
     <div className="p-8 max-w-6xl mx-auto">
+      {error && <div role="alert" className="fixed top-4 left-1/2 -translate-x-1/2 z-[70] w-[min(90vw,40rem)] bg-card border border-destructive rounded p-3 text-sm">{error} <button className="underline" onClick={loadPortfolio}>Retry loading</button></div>}
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold">Portfolio</h1>
       </div>
@@ -176,7 +132,7 @@ export default function PortfolioPage() {
                   <p className="font-medium">{repo.name}</p>
                   <p className="text-xs text-muted-foreground">{repo.description || 'No description'} · {repo.language || 'Unknown'} · {repo.stars} stars</p>
                 </div>
-                <Button size="sm" variant="outline" onClick={() => importRepo(repo)}>
+                <Button size="sm" variant="outline" disabled={busy} onClick={() => importRepo(repo)}>
                   <Sparkles className="mr-2 h-4 w-4" />
                   Import
                 </Button>
@@ -201,10 +157,10 @@ export default function PortfolioPage() {
                 <h3 className="font-semibold">{project.name}</h3>
                 <div className="flex gap-1 items-center">
                   {project.isFeatured && <Sparkles className="h-4 w-4 text-primary" />}
-                  <button onClick={() => setEditProject(project)} className="text-muted-foreground hover:text-primary">
+                  <button aria-label={`Edit ${project.name}`} onClick={() => setEditProject(project)} className="text-muted-foreground hover:text-primary">
                     <Pencil className="h-4 w-4" />
                   </button>
-                  <button onClick={() => toggleFeatured(project.id)} className="text-xs text-muted-foreground hover:text-primary">
+                  <button disabled={busy} onClick={() => toggleFeatured(project.id)} className="text-xs text-muted-foreground hover:text-primary">
                     {project.isFeatured ? 'Unfeature' : 'Feature'}
                   </button>
                 </div>
@@ -217,7 +173,8 @@ export default function PortfolioPage() {
                   ))}
                 </div>
               )}
-              <div className="flex gap-2 mt-auto">
+              {project.gitHubRepoUrl && <Button size="sm" variant="outline" disabled={busy} onClick={() => syncProject(project.id)}>Refresh GitHub stats</Button>}
+              <div className="flex gap-2 mt-3">
                 {project.gitHubRepoUrl && (
                   <a href={project.gitHubRepoUrl} target="_blank" rel="noopener noreferrer" className="text-xs flex items-center gap-1 text-muted-foreground hover:text-primary">
                     <Github className="h-3 w-3" />
@@ -254,11 +211,14 @@ export default function PortfolioPage() {
               <input placeholder="Deployed URL" value={editProject.deployedUrl ?? ''} onChange={e => setEditProject({ ...editProject, deployedUrl: e.target.value })} className="px-3 py-2 rounded-md border bg-background text-sm" />
               <input placeholder="Other Link" value={editProject.link ?? ''} onChange={e => setEditProject({ ...editProject, link: e.target.value })} className="px-3 py-2 rounded-md border bg-background text-sm" />
               <input placeholder="Screenshot URL" value={editProject.screenshotUrl ?? ''} onChange={e => setEditProject({ ...editProject, screenshotUrl: e.target.value })} className="px-3 py-2 rounded-md border bg-background text-sm" />
+              <input aria-label="Project start date" placeholder="Start date (YYYY-MM)" value={editProject.startDate ?? ''} onChange={e => setEditProject({ ...editProject, startDate: e.target.value })} className="px-3 py-2 rounded-md border bg-background text-sm" />
+              <input aria-label="Project end date" disabled={editProject.isCurrent} placeholder="End date (YYYY-MM)" value={editProject.endDate ?? ''} onChange={e => setEditProject({ ...editProject, endDate: e.target.value })} className="px-3 py-2 rounded-md border bg-background text-sm" />
+              <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={editProject.isCurrent} onChange={e => setEditProject({ ...editProject, isCurrent: e.target.checked })} />Ongoing project</label>
               <textarea placeholder="Description" value={editProject.description ?? ''} onChange={e => setEditProject({ ...editProject, description: e.target.value })} className="px-3 py-2 rounded-md border bg-background text-sm min-h-[100px] md:col-span-2" />
             </div>
             <div className="mt-4 flex gap-2 justify-end">
               <Button variant="outline" onClick={() => setEditProject(null)}>Cancel</Button>
-              <Button onClick={saveEditProject}>Save</Button>
+              <Button disabled={busy} onClick={saveEditProject}>Save</Button>
             </div>
           </div>
         </div>

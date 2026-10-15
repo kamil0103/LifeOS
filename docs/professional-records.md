@@ -1,0 +1,11 @@
+# Skills, Experience and Portfolio
+
+Skills saves trim names and deduplicate case-insensitively. Reviewed AI batches are validated as a whole and deduplicated both within a batch and against existing skills. Re-imports preserve an existing skill's proficiency/source. AI extraction is preview-only until the user clicks Save Selected.
+
+Work and project saves validate required names and date ranges. Certificates validate obtained/expiry ranges and verification URLs. Supported date precision is YYYY, YYYY-MM or YYYY-MM-DD; comparisons respect the precision supplied. Current roles/projects clear their end date. Existing records are preserved without automatic rewrites. Certificate statuses use the user's LifeOS local day; a month/year expiry is treated as ending on the last day of that period. Unparseable legacy expiry values are labeled for review.
+
+Portfolio imports use POST /api/portfolio/import with { repoUrl }. The server validates the GitHub root URL and obtains public repository metadata. One transaction either promotes an existing owned project with a matching GitHub/link URL or creates the full portfolio project. Case, trailing slash and .git variants match; curated fields on existing projects are retained. Existing duplicates are not merged/deleted. All professional saves use a per-user gate and PostgreSQL advisory transaction lock.
+
+PUT /api/portfolio/projects/{id}/details saves core and portfolio fields atomically. The older metadata PUT remains available. GitHub network requests are no longer part of ordinary edits or feature toggles. Refresh GitHub stats is explicit, updates stars and fills empty description/technology fields, preserving curated text. Failed external fetches do not create half-imported projects. The public repository picker shows the 100 most recently updated repositories; private repositories are not accessed.
+
+All three tabs display load/save errors, keep failed forms open and retain their input. Mutation buttons prevent overlapping saves, and navigation warns about edited forms. No schema migration or new credentials are required. Local test accounts/verification environments are disposable; production OAuth files and other applications are unchanged.

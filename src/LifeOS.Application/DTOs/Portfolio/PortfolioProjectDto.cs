@@ -36,3 +36,12 @@ public class GitHubRepoInfoDto
     public DateTimeOffset UpdatedAt { get; set; }
     public string? HtmlUrl { get; set; }
 }
+
+public class SavePortfolioProjectRequest : LifeOS.Application.DTOs.Experience.CreateProjectRequest
+{
+    public string? GitHubRepoUrl { get; set; }
+    public string? DeployedUrl { get; set; }
+    public string? ScreenshotUrl { get; set; }
+    public bool IsFeatured { get; set; }
+}
+public record ImportGitHubProjectRequest(string RepoUrl);

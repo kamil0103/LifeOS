@@ -15,10 +15,12 @@ namespace LifeOS.Api.Controllers;
 public class SkillsController : ControllerBase
 {
     private readonly AppDbContext _context;
+    private readonly IProfessionalRecordService _records;
 
-    public SkillsController(AppDbContext context)
+    public SkillsController(AppDbContext context, IProfessionalRecordService records)
     {
         _context = context;
+        _records = records;
     }
 
     private Guid GetUserId()
@@ -45,39 +47,11 @@ public class SkillsController : ControllerBase
 
     [HttpPost]
     public async Task<ActionResult<SkillDto>> CreateSkill(CreateSkillRequest request, CancellationToken ct)
-    {
-        var userId = GetUserId();
-        var skill = new Skill
-        {
-            UserId = userId,
-            Name = request.Name,
-            Category = request.Category,
-            Proficiency = request.Proficiency,
-            Source = request.Source
-        };
-
-        _context.Skills.Add(skill);
-        await _context.SaveChangesAsync(ct);
-        return Ok(MapSkill(skill));
-    }
+        => Ok(await _records.SaveSkillAsync(GetUserId(), null, request, ct));
 
     [HttpPut("{id:guid}")]
     public async Task<ActionResult<SkillDto>> UpdateSkill(Guid id, UpdateSkillRequest request, CancellationToken ct)
-    {
-        var userId = GetUserId();
-        var skill = await _context.Skills
-            .FirstOrDefaultAsync(s => s.Id == id && s.UserId == userId, ct);
-
-        if (skill == null) return NotFound();
-
-        skill.Name = request.Name;
-        skill.Category = request.Category;
-        skill.Proficiency = request.Proficiency;
-        skill.Source = request.Source;
-
-        await _context.SaveChangesAsync(ct);
-        return Ok(MapSkill(skill));
-    }
+        => await _records.SaveSkillAsync(GetUserId(), id, request, ct) is { } result ? Ok(result) : NotFound();
 
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> DeleteSkill(Guid id, CancellationToken ct)
@@ -96,58 +70,15 @@ public class SkillsController : ControllerBase
     // ==================== CERTIFICATES ====================
     [HttpGet("certificates")]
     public async Task<ActionResult<List<CertificateDto>>> GetCertificates(CancellationToken ct)
-    {
-        var userId = GetUserId();
-        var certs = await _context.Certificates
-            .AsNoTracking()
-            .Where(c => c.UserId == userId)
-            .OrderByDescending(c => c.DateObtained)
-            .ToListAsync(ct);
-
-        return Ok(certs.Select(MapCertificate));
-    }
+        => Ok(await _records.CertificatesAsync(GetUserId(), ct));
 
     [HttpPost("certificates")]
     public async Task<ActionResult<CertificateDto>> CreateCertificate(CreateCertificateRequest request, CancellationToken ct)
-    {
-        var userId = GetUserId();
-        var cert = new Certificate
-        {
-            UserId = userId,
-            Name = request.Name,
-            Issuer = request.Issuer,
-            DateObtained = request.DateObtained,
-            Expiry = request.Expiry,
-            CredentialId = request.CredentialId,
-            Url = request.Url,
-            Description = request.Description
-        };
-
-        _context.Certificates.Add(cert);
-        await _context.SaveChangesAsync(ct);
-        return Ok(MapCertificate(cert));
-    }
+        => Ok(await _records.SaveCertificateAsync(GetUserId(), null, request, ct));
 
     [HttpPut("certificates/{id:guid}")]
     public async Task<ActionResult<CertificateDto>> UpdateCertificate(Guid id, UpdateCertificateRequest request, CancellationToken ct)
-    {
-        var userId = GetUserId();
-        var cert = await _context.Certificates
-            .FirstOrDefaultAsync(c => c.Id == id && c.UserId == userId, ct);
-
-        if (cert == null) return NotFound();
-
-        cert.Name = request.Name;
-        cert.Issuer = request.Issuer;
-        cert.DateObtained = request.DateObtained;
-        cert.Expiry = request.Expiry;
-        cert.CredentialId = request.CredentialId;
-        cert.Url = request.Url;
-        cert.Description = request.Description;
-
-        await _context.SaveChangesAsync(ct);
-        return Ok(MapCertificate(cert));
-    }
+        => await _records.SaveCertificateAsync(GetUserId(), id, request, ct) is { } result ? Ok(result) : NotFound();
 
     [HttpDelete("certificates/{id:guid}")]
     public async Task<IActionResult> DeleteCertificate(Guid id, CancellationToken ct)
@@ -190,34 +121,16 @@ public class SkillsController : ControllerBase
             var list = JsonSerializer.Deserialize<List<ExtractedSkillDto>>(cleaned, new JsonSerializerOptions { PropertyNameCaseInsensitive = true }) ?? [];
             return Ok(list);
         }
-        catch (Exception ex)
+        catch (Exception) when (!ct.IsCancellationRequested)
         {
-            return BadRequest(new ProblemDetails { Title = "AI Extraction Failed", Detail = ex.Message });
+            return BadRequest(new ProblemDetails { Title = "AI Extraction Failed", Detail = "Could not extract skills. Try again or add skills manually." });
         }
     }
 
     [HttpPost("save-extracted")]
     public async Task<IActionResult> SaveExtractedSkills([FromBody] List<ExtractedSkillDto> skills, CancellationToken ct)
     {
-        var userId = GetUserId();
-        foreach (var s in skills)
-        {
-            if (string.IsNullOrWhiteSpace(s.Name)) continue;
-            var exists = await _context.Skills.AnyAsync(x => x.UserId == userId && x.Name.ToLower() == s.Name.ToLower(), ct);
-            if (!exists)
-            {
-                _context.Skills.Add(new Skill
-                {
-                    UserId = userId,
-                    Name = s.Name,
-                    Category = s.Category ?? "Other",
-                    Proficiency = s.Proficiency ?? "Intermediate",
-                    Source = "AI Extracted"
-                });
-            }
-        }
-        await _context.SaveChangesAsync(ct);
-        return NoContent();
+        await _records.SaveExtractedAsync(GetUserId(), skills, ct); return NoContent();
     }
     private static SkillDto MapSkill(Skill s) => new()
     {
@@ -228,22 +141,4 @@ public class SkillsController : ControllerBase
         Source = s.Source
     };
 
-    private static CertificateDto MapCertificate(Certificate c) => new()
-    {
-        Id = c.Id,
-        Name = c.Name,
-        Issuer = c.Issuer,
-        DateObtained = c.DateObtained,
-        Expiry = c.Expiry,
-        CredentialId = c.CredentialId,
-        Url = c.Url,
-        Description = c.Description
-    };
-}
-
-public class ExtractedSkillDto
-{
-    public string Name { get; set; } = string.Empty;
-    public string Category { get; set; } = string.Empty;
-    public string Proficiency { get; set; } = string.Empty;
 }

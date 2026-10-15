@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react'
 import api from '@/lib/api'
+import { useRecordActions } from '@/hooks/useRecordActions'
+import { useUnsavedChanges } from '@/hooks/useUnsavedChanges'
 import { Button } from '@/components/ui/button'
 import { Loader2, Plus, Trash2, ExternalLink, Pencil } from 'lucide-react'
 
@@ -27,6 +29,7 @@ interface Project {
 }
 
 export default function ExperiencePage() {
+  const { busy, error, setError, mutate } = useRecordActions()
   const [experiences, setExperiences] = useState<WorkExp[]>([])
   const [projects, setProjects] = useState<Project[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -46,76 +49,93 @@ export default function ExperiencePage() {
     loadData()
   }, [])
 
-  const loadData = () => {
-    setIsLoading(true)
-    Promise.all([
-      api.get('/experience/work').then(({ data }) => setExperiences(data)).catch(() => {}),
-      api.get('/experience/projects').then(({ data }) => setProjects(data)).catch(() => {}),
-    ]).finally(() => setIsLoading(false))
+  const loadData = async () => {
+    setIsLoading(true); setError('')
+    try {
+      const [work, projects] = await Promise.all([api.get('/experience/work'), api.get('/experience/projects')])
+      setExperiences(work.data); setProjects(projects.data)
+    } catch { setError('Could not load experience and projects. Try again.') }
+    finally { setIsLoading(false) }
   }
 
-  const addWork = async () => {
-    if (!newWork.company || !newWork.title) return
-    await api.post('/experience/work', newWork)
-    setNewWork({ company: '', title: '', location: '', startDate: '', endDate: '', isCurrent: false, bullets: '' })
-    setShowAddWork(false)
-    loadData()
+  const addWork = () => {
+    return mutate(async () => {
+      if (!newWork.company || !newWork.title) return
+      await api.post('/experience/work', newWork)
+      setNewWork({ company: '', title: '', location: '', startDate: '', endDate: '', isCurrent: false, bullets: '' })
+      setShowAddWork(false)
+      await loadData()
+    })
   }
 
-  const addProject = async () => {
-    if (!newProj.name) return
-    await api.post('/experience/projects', newProj)
-    setNewProj({ name: '', description: '', technologies: '', link: '', startDate: '', endDate: '', isCurrent: false, isPortfolioProject: false })
-    setShowAddProj(false)
-    loadData()
+  const addProject = () => {
+    return mutate(async () => {
+      if (!newProj.name) return
+      await api.post('/experience/projects', newProj)
+      setNewProj({ name: '', description: '', technologies: '', link: '', startDate: '', endDate: '', isCurrent: false, isPortfolioProject: false })
+      setShowAddProj(false)
+      await loadData()
+    })
   }
 
   // Edit modals
   const [editWork, setEditWork] = useState<WorkExp | null>(null)
   const [editProj, setEditProj] = useState<Project | null>(null)
 
-  const saveEditWork = async () => {
-    if (!editWork || !editWork.company || !editWork.title) return
-    await api.put(`/experience/work/${editWork.id}`, {
-      company: editWork.company,
-      title: editWork.title,
-      location: editWork.location,
-      startDate: editWork.startDate,
-      endDate: editWork.endDate,
-      isCurrent: editWork.isCurrent,
-      bullets: editWork.bullets,
+  const saveEditWork = () => {
+    return mutate(async () => {
+      if (!editWork || !editWork.company || !editWork.title) return
+      await api.put(`/experience/work/${editWork.id}`, {
+        company: editWork.company,
+        title: editWork.title,
+        location: editWork.location,
+        startDate: editWork.startDate,
+        endDate: editWork.endDate,
+        isCurrent: editWork.isCurrent,
+        bullets: editWork.bullets,
     })
     setEditWork(null)
-    loadData()
+    await loadData()
+    })
   }
 
-  const saveEditProj = async () => {
-    if (!editProj || !editProj.name) return
-    await api.put(`/experience/projects/${editProj.id}`, {
-      name: editProj.name,
-      description: editProj.description,
-      technologies: editProj.technologies,
-      link: editProj.link,
-      startDate: editProj.startDate,
-      endDate: editProj.endDate,
-      isCurrent: editProj.isCurrent,
-      isPortfolioProject: editProj.isPortfolioProject,
+  const saveEditProj = () => {
+    return mutate(async () => {
+      if (!editProj || !editProj.name) return
+      await api.put(`/experience/projects/${editProj.id}`, {
+        name: editProj.name,
+        description: editProj.description,
+        technologies: editProj.technologies,
+        link: editProj.link,
+        startDate: editProj.startDate,
+        endDate: editProj.endDate,
+        isCurrent: editProj.isCurrent,
+        isPortfolioProject: editProj.isPortfolioProject,
     })
     setEditProj(null)
-    loadData()
+    await loadData()
+    })
   }
 
-  const deleteWork = async (id: string) => {
-    if (!confirm('Delete this work experience?')) return
-    await api.delete(`/experience/work/${id}`)
-    loadData()
+  const deleteWork = (id: string) => {
+    return mutate(async () => {
+      if (!confirm('Delete this work experience?')) return
+      await api.delete(`/experience/work/${id}`)
+      await loadData()
+    })
   }
 
-  const deleteProject = async (id: string) => {
-    if (!confirm('Delete this project?')) return
-    await api.delete(`/experience/projects/${id}`)
-    loadData()
+  const deleteProject = (id: string) => {
+    return mutate(async () => {
+      if (!confirm('Delete this project?')) return
+      await api.delete(`/experience/projects/${id}`)
+      await loadData()
+    })
   }
+
+  useUnsavedChanges((showAddWork && !!(newWork.company.trim() || newWork.title.trim())) || (showAddProj && !!newProj.name.trim()) ||
+    (!!editWork && JSON.stringify(editWork) !== JSON.stringify(experiences.find(w => w.id === editWork.id))) ||
+    (!!editProj && JSON.stringify(editProj) !== JSON.stringify(projects.find(p => p.id === editProj.id))))
 
   if (isLoading) {
     return (
@@ -127,6 +147,7 @@ export default function ExperiencePage() {
 
   return (
     <div className="p-8 max-w-5xl mx-auto">
+      {error && <div role="alert" className="fixed top-4 left-1/2 -translate-x-1/2 z-[70] w-[min(90vw,40rem)] bg-card border border-destructive rounded p-3 text-sm">{error} <button className="underline" onClick={loadData}>Retry loading</button></div>}
       <div className="mb-8">
         <h1 className="text-3xl font-bold tracking-tight">Experience</h1>
         <p className="text-muted-foreground mt-1">Work history and projects</p>
@@ -176,7 +197,7 @@ export default function ExperiencePage() {
                 <textarea placeholder="Bullet points (one per line)" value={newWork.bullets} onChange={(e) => setNewWork({ ...newWork, bullets: e.target.value })} className="px-3 py-2 rounded-md border bg-background text-sm min-h-[80px] md:col-span-2" />
               </div>
               <div className="mt-4 flex gap-2">
-                <Button onClick={addWork}>Save</Button>
+                <Button disabled={busy} onClick={addWork}>Save</Button>
                 <Button variant="outline" onClick={() => setShowAddWork(false)}>Cancel</Button>
               </div>
             </div>
@@ -197,7 +218,7 @@ export default function ExperiencePage() {
                   </p>
                 </div>
                 <div className="flex gap-1">
-                  <Button variant="ghost" size="sm" onClick={() => setEditWork(exp)}>
+                  <Button variant="ghost" size="sm" aria-label={`Edit ${exp.title}`} onClick={() => setEditWork(exp)}>
                     <Pencil className="h-4 w-4 text-muted-foreground" />
                   </Button>
                   <Button variant="ghost" size="sm" onClick={() => deleteWork(exp.id)}>
@@ -244,7 +265,7 @@ export default function ExperiencePage() {
                 <textarea placeholder="Description" value={newProj.description} onChange={(e) => setNewProj({ ...newProj, description: e.target.value })} className="px-3 py-2 rounded-md border bg-background text-sm min-h-[80px] md:col-span-2" />
               </div>
               <div className="mt-4 flex gap-2">
-                <Button onClick={addProject}>Save</Button>
+                <Button disabled={busy} onClick={addProject}>Save</Button>
                 <Button variant="outline" onClick={() => setShowAddProj(false)}>Cancel</Button>
               </div>
             </div>
@@ -308,7 +329,7 @@ export default function ExperiencePage() {
             </div>
             <div className="mt-4 flex gap-2 justify-end">
               <Button variant="outline" onClick={() => setEditWork(null)}>Cancel</Button>
-              <Button onClick={saveEditWork}>Save</Button>
+              <Button disabled={busy} onClick={saveEditWork}>Save</Button>
             </div>
           </div>
         </div>
@@ -339,7 +360,7 @@ export default function ExperiencePage() {
             </div>
             <div className="mt-4 flex gap-2 justify-end">
               <Button variant="outline" onClick={() => setEditProj(null)}>Cancel</Button>
-              <Button onClick={saveEditProj}>Save</Button>
+              <Button disabled={busy} onClick={saveEditProj}>Save</Button>
             </div>
           </div>
         </div>
