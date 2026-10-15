@@ -30,6 +30,9 @@ public class ExtractedDegreeDto
 
 public class ExtractedCourseDto
 {
+    public bool UpdateExisting { get; set; }
+    public Guid? ExistingCourseId { get; set; }
+    public string? ExpectedFingerprint { get; set; }
     public string? Code { get; set; }
     public string Name { get; set; } = string.Empty;
     public string? Grade { get; set; }
@@ -39,9 +42,12 @@ public class ExtractedCourseDto
 
 public class SaveExtractedRequest
 {
+    public Guid? InstitutionId { get; set; }
+    public Guid? DegreeId { get; set; }
+    public bool Unassigned { get; set; }
     public ExtractedInstitutionDto Institution { get; set; } = new();
     public ExtractedDegreeDto Degree { get; set; } = new();
     public List<ExtractedCourseDto> Courses { get; set; } = new();
 }
 
-public record TranscriptCoursePreview(int Index, string Status, CourseDto? ExistingCourse, int? DuplicateOf);
+public record TranscriptCoursePreview(int Index, string Status, CourseDto? ExistingCourse, int? DuplicateOf, string? Fingerprint = null);

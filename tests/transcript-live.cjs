@@ -28,6 +28,20 @@ async function account() {
     payload.courses[0].term = 'Spring 2026'; assert.equal((await request(a, 'POST', '/transcripts/save', payload)).coursesAdded, 1)
     assert.equal((await request(b, 'GET', '/education/institutions')).length, 0)
     payload.institution.name = 'Invalid school'; payload.courses.push({ name: 'Invalid credit', credits: 'unknown' }); await request(b, 'POST', '/transcripts/save', payload, 400); assert.equal((await request(b, 'GET', '/education/institutions')).length, 0)
+    const approved = { institution: { name: 'Different extracted school' }, degree: { name: 'Different extracted degree' }, institutionId: results[0].institutionId, degreeId: results[0].degreeId, courses: [{ name: 'Algorithms', code: 'CS101', term: 'Fall 2025', grade: 'B', credits: '4' }] }
+    let review = await request(a, 'POST', '/transcripts/preview', approved); assert.equal(review[0].status, 'existing')
+    approved.courses[0] = { ...approved.courses[0], updateExisting: true, existingCourseId: review[0].existingCourse.id, expectedFingerprint: review[0].fingerprint }
+    assert.equal((await request(a, 'POST', '/transcripts/save', approved)).coursesUpdated, 1)
+    assert.equal((await request(a, 'POST', '/transcripts/save', approved)).coursesUpdated, 0)
+    await request(b, 'POST', '/transcripts/preview', approved, 400)
+    review = await request(a, 'POST', '/transcripts/preview', approved)
+    await request(a, 'PUT', '/education/courses/' + review[0].existingCourse.id, { name: 'Algorithms', code: 'CS101', term: 'Fall 2025', grade: 'C', credits: 4, degreeId: approved.degreeId, institutionId: approved.institutionId, isMajorRelated: true })
+    approved.courses[0].expectedFingerprint = review[0].fingerprint
+    approved.courses.push({ name: 'Should roll back', code: 'INVALID_ADD', credits: '3' })
+    await request(a, 'POST', '/transcripts/save', approved, 409)
+    schools = await request(a, 'GET', '/education/institutions'); assert.equal(schools.length, 1); assert.equal(schools[0].degrees[0].courses.length, 2); assert.equal(schools[0].degrees[0].courses.find(c => c.term === 'Fall 2025').grade, 'C')
+    const unassigned = { ...approved, degreeId: undefined, unassigned: true, courses: [{ name: 'Unassigned import', credits: '2' }] }
+    assert.equal((await request(a, 'POST', '/transcripts/save', unassigned)).degreeId, null)
     console.log('PASS: concurrent transcript retries, normalized matching, preserved grades, distinct terms, ownership and invalid import rollback')
   } finally {
     for (const id of users) sql(`DELETE FROM "Users" WHERE "Id"='${id}'`)

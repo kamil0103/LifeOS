@@ -259,7 +259,7 @@ export default function EducationPage() {
     setSaveError(null)
     try {
       const { data } = await api.post('/transcripts/save', reviewed)
-      notify(`Saved ${data.coursesAdded} courses; ${(extractedData.courses?.length || 0) - reviewed.courses.length + data.coursesSkipped} courses skipped or excluded.`)
+      notify(`Added ${data.coursesAdded}, updated ${data.coursesUpdated || 0} courses; ${(extractedData.courses?.length || 0) - reviewed.courses.length + data.coursesSkipped} courses skipped or excluded.`)
       setShowTranscriptModal(false)
       setTranscriptText('')
       setExtractedData(null)
@@ -508,7 +508,7 @@ export default function EducationPage() {
         ))}
       </div>
 
-      {showTranscriptModal && extractedData && <TranscriptReview data={extractedData} saving={savingTranscript} error={saveError} onSave={saveExtracted} onCancel={() => setShowTranscriptModal(false)} />}
+      {showTranscriptModal && extractedData && <TranscriptReview data={extractedData} institutions={institutions} saving={savingTranscript} error={saveError} onSave={saveExtracted} onCancel={() => setShowTranscriptModal(false)} />}
 
       {/* Edit Institution Modal */}
       {editInst && (

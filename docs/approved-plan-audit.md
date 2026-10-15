@@ -66,3 +66,13 @@ Implemented manual degree/course creation using existing owned-parent APIs, inli
 Transcript review now calls a read-only duplicate preview, displays imported and stored grade/credit values, defaults to selecting new courses, and allows excluding new or repeated import rows. Preview errors block saving and offer retry. The actual save still rechecks duplicates transactionally; preview never writes records.
 
 Still open: choosing an import destination explicitly and overriding saved course values directly within import review. Existing duplicates remain untouched. Other tabs in the audit remain open as listed.
+
+### Import destinations and approved updates (October 15 — prepared, not deployed)
+
+Prepared destination selection for an owned institution/degree or unassigned courses. The server rejects foreign or mismatched parents; preview and save share destination resolution. Changing the destination clears the review selections.
+
+Prepared explicit per-course approval of imported **grade and credits only**. Blank imported values preserve stored values. Names, codes, terms, descriptions and resume relevance remain unchanged. Preview provides a content fingerprint; a changed course blocks a nontrivial update with HTTP 409 and no partial import. Successful retries become no-ops. Manual degree/course writes share the import lock so they cannot interleave with approval checks.
+
+Validation: frontend production build and all 33 frontend tests pass. A separate local build of the actual Application project, AppDbContext, education services and import lock passes with no warnings/errors; isolated in-memory checks pass for destination ownership/alignment, read-only preview, approved updates, preserved metadata, retries, stale rejection before mutation, blank preservation and unassigned courses. Full API/xUnit and PostgreSQL verification is still pending. New xUnit/API cases and the live disposable-account script are included for that verification.
+
+Deployment is blocked because Tower's Desktop Commander Remote connection is offline. The deployed app remains at education-phase10. This prepared batch must pass the normal backend suite and live PostgreSQL checks before rollout. No migration is required. Other tabs in this audit remain unfinished.

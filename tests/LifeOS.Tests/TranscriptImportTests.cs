@@ -45,6 +45,57 @@ public class TranscriptImportTests
         request.Degree.Name = "Different degree"; preview = await service.PreviewAsync(user, request, default); Assert.Equal("new", preview[0].Status);
     }
     [Fact]
+    public async Task DestinationSelectionEnforcesOwnershipAndDegreeAlignment()
+    {
+        using var db = Database(); var service = new TranscriptImportService(db); var user = Guid.NewGuid(); var request = Request();
+        var first = await service.SaveAsync(user, request, default);
+        request.Institution.Name = "Different extracted label"; request.Degree.Name = "Different extracted degree"; request.InstitutionId = first.InstitutionId; request.DegreeId = first.DegreeId;
+        var preview = await service.PreviewAsync(user, request, default); Assert.Equal("existing", preview[0].Status);
+        await service.SaveAsync(user, request, default); Assert.Single(db.Institutions); Assert.Single(db.Degrees);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => service.PreviewAsync(Guid.NewGuid(), request, default));
+        var other = new LifeOS.Domain.Entities.Institution { UserId = user, Name = "Other school" }; db.Institutions.Add(other); await db.SaveChangesAsync(); request.InstitutionId = other.Id;
+        await Assert.ThrowsAsync<InvalidOperationException>(() => service.SaveAsync(user, request, default)); Assert.Single(db.Courses);
+        request.InstitutionId = first.InstitutionId; request.DegreeId = null; request.Unassigned = true;
+        Assert.Equal("new", (await service.PreviewAsync(user, request, default))[0].Status);
+        var unassigned = await service.SaveAsync(user, request, default); Assert.Null(unassigned.DegreeId); Assert.Single(db.Degrees); Assert.Equal(2, db.Courses.Count());
+    }
+    [Fact]
+    public async Task ExplicitUpdatesAreRetrySafeAndPreserveOtherCourseFields()
+    {
+        using var db = Database(); var service = new TranscriptImportService(db); var user = Guid.NewGuid(); var request = Request();
+        await service.SaveAsync(user, request, default); var saved = db.Courses.Single(); saved.Description = "Evidence"; saved.IsMajorRelated = false; await db.SaveChangesAsync();
+        var preview = (await service.PreviewAsync(user, request, default))[0]; var row = request.Courses[0]; row.Grade = "B"; row.Credits = "4";
+        row.UpdateExisting = true; row.ExistingCourseId = preview.ExistingCourse!.Id; row.ExpectedFingerprint = preview.Fingerprint;
+        Assert.Equal(1, (await service.SaveAsync(user, request, default)).CoursesUpdated); Assert.Equal("B", saved.Grade); Assert.Equal(4m, saved.Credits); Assert.Equal("Evidence", saved.Description); Assert.False(saved.IsMajorRelated);
+        var retry = await service.SaveAsync(user, request, default); Assert.Equal(0, retry.CoursesUpdated); Assert.Equal(1, retry.CoursesSkipped); Assert.Single(db.Courses);
+        preview = (await service.PreviewAsync(user, request, default))[0]; row.ExpectedFingerprint = preview.Fingerprint; row.Grade = ""; row.Credits = "";
+        await service.SaveAsync(user, request, default); Assert.Equal("B", saved.Grade); Assert.Equal(4m, saved.Credits);
+    }
+    [Fact]
+    public async Task StaleApprovalRejectsTheWholeImportBeforeAnyChanges()
+    {
+        using var db = Database(); var service = new TranscriptImportService(db); var user = Guid.NewGuid(); var request = Request();
+        await service.SaveAsync(user, request, default); var preview = (await service.PreviewAsync(user, request, default))[0];
+        var records = new EducationRecordService(db); var saved = db.Courses.Single();
+        await records.SaveCourseAsync(user, saved.Id, new() { Name = saved.Name, Code = saved.Code, Term = saved.Term, InstitutionId = saved.InstitutionId, DegreeId = saved.DegreeId, Grade = "C", Credits = 3.5m }, default);
+        var row = request.Courses[0]; row.Grade = "B"; row.UpdateExisting = true; row.ExistingCourseId = saved.Id; row.ExpectedFingerprint = preview.Fingerprint;
+        request.Courses.Insert(0, new() { Name = "New course", Code = "CS202", Credits = "3" });
+        await Assert.ThrowsAsync<LifeOS.Application.Interfaces.RecordConflictException>(() => service.SaveAsync(user, request, default)); Assert.Single(db.Courses); Assert.Equal("C", saved.Grade);
+        row.ExpectedFingerprint = null; await Assert.ThrowsAsync<InvalidOperationException>(() => service.SaveAsync(user, request, default));
+    }
+    [Fact]
+    public async Task ApiBindsDestinationAndRejectsAStaleApproval()
+    {
+        using var app = new HabitApiTests.Factory(); using var client = app.CreateClient(); var request = Request();
+        var saved = await (await client.PostAsJsonAsync("/api/transcripts/save", request)).Content.ReadFromJsonAsync<LifeOS.Application.Interfaces.TranscriptImportResult>();
+        request.InstitutionId = saved!.InstitutionId; request.DegreeId = saved.DegreeId;
+        var preview = await (await client.PostAsJsonAsync("/api/transcripts/preview", request)).Content.ReadFromJsonAsync<List<TranscriptCoursePreview>>();
+        var row = request.Courses[0]; row.UpdateExisting = true; row.ExistingCourseId = preview![0].ExistingCourse!.Id; row.ExpectedFingerprint = preview[0].Fingerprint; row.Grade = "B";
+        var updated = await (await client.PostAsJsonAsync("/api/transcripts/save", request)).Content.ReadFromJsonAsync<LifeOS.Application.Interfaces.TranscriptImportResult>(); Assert.Equal(1, updated!.CoursesUpdated);
+        row.Grade = "C"; Assert.Equal(System.Net.HttpStatusCode.Conflict, (await client.PostAsJsonAsync("/api/transcripts/save", request)).StatusCode);
+        request.InstitutionId = Guid.NewGuid(); Assert.Equal(System.Net.HttpStatusCode.BadRequest, (await client.PostAsJsonAsync("/api/transcripts/preview", request)).StatusCode);
+    }
+    [Fact]
     public async Task ApiRetryAndInvalidCreditsAreSafe()
     {
         using var app = new HabitApiTests.Factory(); using var client = app.CreateClient(); var request = Request();
