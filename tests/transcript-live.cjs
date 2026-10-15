@@ -18,8 +18,10 @@ async function account() {
   try {
     const a = await account(), b = await account()
     const payload = { institution: { name: 'Synthetic Transcript School' }, degree: { name: 'BSc', field: 'Computing' }, courses: [{ name: 'Algorithms', code: 'CS 101', grade: 'A', credits: '3.5', term: 'Fall 2025' }] }
+    const before = await request(a, 'POST', '/transcripts/preview', payload); assert.equal(before[0].status, 'new'); assert.equal((await request(a, 'GET', '/education/institutions')).length, 0)
     const results = await Promise.all(Array.from({ length: 6 }, () => request(a, 'POST', '/transcripts/save', payload)))
     assert.equal(new Set(results.map(x => x.institutionId)).size, 1); assert.equal(new Set(results.map(x => x.degreeId)).size, 1); assert.equal(results.reduce((sum, x) => sum + x.coursesAdded, 0), 1)
+    const after = await request(a, 'POST', '/transcripts/preview', payload); assert.equal(after[0].status, 'existing'); assert.equal(after[0].existingCourse.grade, 'A'); assert.equal((await request(b, 'POST', '/transcripts/preview', payload))[0].status, 'new')
     payload.institution.name = ' SYNTHETIC   transcript school '; payload.courses[0].code = 'cs101'; payload.courses[0].grade = 'B'
     assert.equal((await request(a, 'POST', '/transcripts/save', payload)).coursesSkipped, 1)
     let schools = await request(a, 'GET', '/education/institutions'); assert.equal(schools.length, 1); assert.equal(schools[0].degrees.length, 1); assert.equal(schools[0].degrees[0].courses.length, 1); assert.equal(schools[0].degrees[0].courses[0].grade, 'A')

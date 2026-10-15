@@ -3,5 +3,6 @@ namespace LifeOS.Application.Interfaces;
 public record TranscriptImportResult(Guid InstitutionId, Guid? DegreeId, int CoursesAdded, int CoursesSkipped);
 public interface ITranscriptImportService
 {
+    Task<IReadOnlyList<TranscriptCoursePreview>> PreviewAsync(Guid userId, SaveExtractedRequest request, CancellationToken ct);
     Task<TranscriptImportResult> SaveAsync(Guid userId, SaveExtractedRequest request, CancellationToken ct);
 }

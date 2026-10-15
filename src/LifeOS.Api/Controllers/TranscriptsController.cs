@@ -585,6 +585,10 @@ Rules:
         return cleaned;
     }
 
+    [HttpPost("preview")]
+    public async Task<ActionResult<IReadOnlyList<TranscriptCoursePreview>>> Preview([FromBody] SaveExtractedRequest request, CancellationToken ct)
+        => Ok(await _imports.PreviewAsync(GetUserId(), request, ct));
+
     [HttpPost("save")]
     public async Task<ActionResult<TranscriptImportResult>> SaveExtracted([FromBody] SaveExtractedRequest request, CancellationToken ct)
         => Ok(await _imports.SaveAsync(GetUserId(), request, ct));

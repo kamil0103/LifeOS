@@ -43,3 +43,5 @@ public class SaveExtractedRequest
     public ExtractedDegreeDto Degree { get; set; } = new();
     public List<ExtractedCourseDto> Courses { get; set; } = new();
 }
+
+public record TranscriptCoursePreview(int Index, string Status, CourseDto? ExistingCourse, int? DuplicateOf);

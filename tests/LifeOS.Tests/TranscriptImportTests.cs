@@ -30,9 +30,25 @@ public class TranscriptImportTests
         request.Courses[1] = request.Courses[0]; var result = await service.SaveAsync(user, request, default); Assert.Equal(1, result.CoursesAdded); Assert.Equal(1, result.CoursesSkipped);
     }
     [Fact]
+    public async Task PreviewIsReadOnlyAndDistinguishesExistingBatchDuplicatesAndRetakes()
+    {
+        using var db = Database(); var service = new TranscriptImportService(db); var user = Guid.NewGuid(); var request = Request();
+        var preview = await service.PreviewAsync(user, request, default); Assert.Equal("new", preview[0].Status); Assert.Empty(db.Institutions); Assert.Empty(db.Courses);
+        await service.SaveAsync(user, request, default);
+        request.Courses[0].Grade = "B";
+        request.Courses.Add(new() { Name = "Databases", Code = "CS202", Term = "Fall 2025" });
+        request.Courses.Add(new() { Name = "Databases", Code = "cs 202", Term = "Fall 2025" });
+        request.Courses.Add(new() { Name = "Algorithms", Code = "CS101", Term = "Spring 2026" });
+        preview = await service.PreviewAsync(user, request, default);
+        Assert.Equal(new[] { "existing", "new", "batch_duplicate", "new" }, preview.Select(x => x.Status)); Assert.Equal("A", preview[0].ExistingCourse!.Grade); Assert.Equal(1, preview[2].DuplicateOf); Assert.Single(db.Courses);
+        var foreign = await service.PreviewAsync(Guid.NewGuid(), request, default); Assert.Null(foreign[0].ExistingCourse); Assert.Equal("new", foreign[0].Status);
+        request.Degree.Name = "Different degree"; preview = await service.PreviewAsync(user, request, default); Assert.Equal("new", preview[0].Status);
+    }
+    [Fact]
     public async Task ApiRetryAndInvalidCreditsAreSafe()
     {
         using var app = new HabitApiTests.Factory(); using var client = app.CreateClient(); var request = Request();
+        var previewResponse = await client.PostAsJsonAsync("/api/transcripts/preview", request); Assert.Equal(System.Net.HttpStatusCode.OK, previewResponse.StatusCode);
         var response = await client.PostAsJsonAsync("/api/transcripts/save", request); Assert.True(response.IsSuccessStatusCode, await response.Content.ReadAsStringAsync());
         response = await client.PostAsJsonAsync("/api/transcripts/save", request); var result = await response.Content.ReadFromJsonAsync<LifeOS.Application.Interfaces.TranscriptImportResult>(); Assert.Equal(0, result!.CoursesAdded);
         request.Courses[0].Credits = "-2"; Assert.Equal(System.Net.HttpStatusCode.BadRequest, (await client.PostAsJsonAsync("/api/transcripts/save", request)).StatusCode);

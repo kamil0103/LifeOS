@@ -16,6 +16,38 @@ public class TranscriptImportService(AppDbContext db) : ITranscriptImportService
     private static bool SameCourse(Course a, Course b) => Key(a.Term) == Key(b.Term) &&
         (Code(a.Code).Length > 0 && Code(b.Code).Length > 0 ? Code(a.Code) == Code(b.Code) : Key(a.Name) == Key(b.Name));
 
+    // Read-only preview. Save independently rechecks the current database under its write lock.
+    public async Task<IReadOnlyList<TranscriptCoursePreview>> PreviewAsync(Guid userId, SaveExtractedRequest request, CancellationToken ct)
+    {
+        if (request.Institution == null || Key(request.Institution.Name).Length == 0)
+            throw new InvalidOperationException("Institution name is required.");
+        if ((request.Courses?.Count ?? 0) > 2000) throw new InvalidOperationException("Import up to 2000 courses at a time.");
+        var schools = (await db.Institutions.AsNoTracking().Where(x => x.UserId == userId).ToListAsync(ct)).Where(x => Key(x.Name) == Key(request.Institution.Name)).ToList();
+        if (schools.Count > 1) throw new RecordConflictException("Multiple matching institutions exist. Rename them in Education before importing.");
+        var school = schools.SingleOrDefault();
+        Degree? degree = null;
+        var hasDegree = Key(request.Degree?.Name).Length > 0;
+        if (school != null && hasDegree)
+        {
+            var degrees = (await db.Degrees.AsNoTracking().Where(x => x.UserId == userId && x.InstitutionId == school.Id).ToListAsync(ct)).Where(x => Key(x.DegreeName) == Key(request.Degree!.Name) && Key(x.Field) == Key(request.Degree.Field)).ToList();
+            if (degrees.Count > 1) throw new RecordConflictException("Multiple matching degrees exist. Rename them in Education before importing.");
+            degree = degrees.SingleOrDefault();
+        }
+        var degreeId = degree?.Id;
+        var existing = school == null || (hasDegree && degree == null) ? new List<Course>() : await db.Courses.AsNoTracking().Where(x => x.UserId == userId && x.InstitutionId == school.Id && x.DegreeId == degreeId).ToListAsync(ct);
+        var seen = new List<Course>(); var result = new List<TranscriptCoursePreview>();
+        foreach (var row in request.Courses ?? [])
+        {
+            if (row == null) throw new InvalidOperationException("Every imported course needs a name.");
+            var course = new Course { Name = row.Name, Code = row.Code, Term = row.Term };
+            var match = existing.FirstOrDefault(x => SameCourse(x, course));
+            var duplicateOf = seen.FindIndex(x => SameCourse(x, course));
+            result.Add(new(result.Count, match != null ? "existing" : duplicateOf >= 0 ? "batch_duplicate" : "new", match == null ? null : new CourseDto { Id = match.Id, Name = match.Name, Code = match.Code, Term = match.Term, Grade = match.Grade, Credits = match.Credits }, duplicateOf >= 0 ? duplicateOf : null));
+            seen.Add(course);
+        }
+        return result;
+    }
+
     public Task<TranscriptImportResult> SaveAsync(Guid userId, SaveExtractedRequest request, CancellationToken ct)
     {
         if (request.Institution == null || Key(request.Institution.Name).Length == 0)
