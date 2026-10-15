@@ -1,8 +1,9 @@
+import CoachConversation from './CoachConversation'
 import { notify } from '@/lib/notify'
 import { useState, useEffect } from 'react'
 import api from '@/lib/api'
 import { Button } from '@/components/ui/button'
-import { Loader2, Sparkles, Check, MessageCircle, AlertTriangle, Lightbulb, Send } from 'lucide-react'
+import { Loader2, Sparkles, Check, AlertTriangle, Lightbulb } from 'lucide-react'
 
 interface MissionPriority {
   completed?: boolean
@@ -33,9 +34,6 @@ export default function AiCoachPage() {
   const [messages, setMessages] = useState<AiMessage[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isGenerating, setIsGenerating] = useState(false)
-  const [chatMessage, setChatMessage] = useState('')
-  const [chatResponse, setChatResponse] = useState('')
-  const [isChatting, setIsChatting] = useState(false)
 
   useEffect(() => {
     loadData()
@@ -86,21 +84,6 @@ export default function AiCoachPage() {
       setMission({ ...mission, isCompleted: true })
     } catch (err) {
       console.error(err)
-    }
-  }
-
-  const sendChat = async () => {
-    if (!chatMessage.trim()) return
-    setIsChatting(true)
-    setChatResponse('')
-    try {
-      const { data } = await api.post('/aicoach/chat', { message: chatMessage })
-      setChatResponse(data.response)
-    } catch (err) {
-      setChatResponse('Sorry, I could not process your message. Please try again.')
-    } finally {
-      setIsChatting(false)
-      setChatMessage('')
     }
   }
 
@@ -217,21 +200,7 @@ export default function AiCoachPage() {
               ))}
             </div>
 
-            {!mission.isCompleted && (
-              <Button
-                onClick={generateMission}
-                disabled={isGenerating}
-                variant="outline"
-                className="mt-4 w-full"
-              >
-                {isGenerating ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <Sparkles className="mr-2 h-4 w-4" />
-                )}
-                Regenerate Mission
-              </Button>
-            )}
+
           </div>
         )}
       </div>
@@ -267,37 +236,7 @@ export default function AiCoachPage() {
         </div>
       )}
 
-      {/* Chat Interface */}
-      <div className="bg-card border rounded-lg p-6 shadow-sm">
-        <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
-          <MessageCircle className="h-5 w-5" />
-          Chat with AI Coach
-        </h2>
-
-        {chatResponse && (
-          <div className="bg-primary/5 rounded-lg p-4 mb-4">
-            <p className="text-sm">{chatResponse}</p>
-          </div>
-        )}
-
-        <div className="flex gap-2">
-          <input
-            type="text"
-            value={chatMessage}
-            onChange={(e) => setChatMessage(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && sendChat()}
-            placeholder="Ask for advice, motivation, or guidance..."
-            className="flex-1 px-3 py-2 rounded-md border bg-background text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          />
-          <Button onClick={sendChat} disabled={isChatting || !chatMessage.trim()}>
-            {isChatting ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Send className="h-4 w-4" />
-            )}
-          </Button>
-        </div>
-      </div>
+      <CoachConversation />
     </div>
   )
 }
