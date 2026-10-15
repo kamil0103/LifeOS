@@ -64,6 +64,8 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddHttpClient();
 builder.Services.AddHttpClient("GoogleCalendar", client => client.Timeout = TimeSpan.FromSeconds(45));
 builder.Services.AddScoped<Func<IAiProvider>>(sp=>()=>sp.GetRequiredService<IAiProvider>());
+builder.Services.AddScoped<IEducationRecordService, LifeOS.Infrastructure.Education.EducationRecordService>();
+builder.Services.AddScoped<ICodingProgressService, LifeOS.Infrastructure.Coding.CodingProgressService>();
 builder.Services.AddScoped<IAiCoachService, LifeOS.Infrastructure.Coach.AiCoachService>();
 builder.Services.AddScoped<ICareerWorkflowService, LifeOS.Infrastructure.Career.CareerWorkflowService>();
 builder.Services.AddScoped<ICalendarService, CalendarService>();

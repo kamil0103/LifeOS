@@ -51,6 +51,7 @@ export default function EducationPage() {
   const [showTranscriptModal, setShowTranscriptModal] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
   const [uploadProgress, setUploadProgress] = useState<string | null>(null)
+  const [loadError, setLoadError] = useState('')
   const [saveError, setSaveError] = useState<string | null>(null)
 
   // Edit modal state
@@ -64,9 +65,10 @@ export default function EducationPage() {
 
   const loadInstitutions = () => {
     setIsLoading(true)
+    setLoadError('')
     api.get('/education/institutions')
       .then(({ data }) => setInstitutions(data))
-      .catch(console.error)
+      .catch(() => setLoadError('Could not load education records. Try again.'))
       .finally(() => setIsLoading(false))
   }
 
@@ -269,6 +271,7 @@ export default function EducationPage() {
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
+      {loadError && <div role="alert" className="border border-red-500 rounded p-3 text-sm">{loadError} <button className="underline" onClick={loadInstitutions}>Retry</button></div>}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="page-header">Education</h1>

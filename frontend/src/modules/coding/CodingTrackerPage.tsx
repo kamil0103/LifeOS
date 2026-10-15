@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import api from '@/lib/api'
+import CodingAttempts from './CodingAttempts'
 import { Button } from '@/components/ui/button'
 import { Loader2, Code2, Trophy, Flame, Clock, CheckCircle, Circle, RotateCcw, Plus, Trash2, Filter } from 'lucide-react'
 
@@ -45,7 +46,8 @@ export default function CodingTrackerPage() {
   const [filterDifficulty, setFilterDifficulty] = useState<string>('')
   const [filterSolved, setFilterSolved] = useState<string>('')
   const [showAddForm, setShowAddForm] = useState(false)
-  const [solvingId, setSolvingId] = useState<string | null>(null)
+  const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
 
   const [formData, setFormData] = useState({
     title: '',
@@ -57,8 +59,6 @@ export default function CodingTrackerPage() {
     notes: ''
   })
 
-  const [solveData, setSolveData] = useState<Record<string, { language: string; time: string; notes: string }>>({})
-
   useEffect(() => {
     loadData()
   }, [filterDifficulty, filterSolved])
@@ -67,6 +67,7 @@ export default function CodingTrackerPage() {
 
   const loadData = async () => {
     setIsLoading(true)
+    setError('')
     try {
       const params = new URLSearchParams()
       if (filterDifficulty) params.append('difficulty', filterDifficulty)
@@ -79,40 +80,23 @@ export default function CodingTrackerPage() {
       setProblems(probs)
       setStats(s)
     } catch (err) {
-      console.error(err)
+      setError((err as any)?.response?.data?.detail || 'Could not load coding records. Try again.')
     } finally {
       setIsLoading(false)
     }
   }
 
   const createProblem = async () => {
-    if (!formData.title.trim()) return
+    if (!formData.title.trim() || saving) return
+    setSaving(true); setError('')
     try {
       await api.post('/coding/problems', formData)
       setShowAddForm(false)
       setFormData({ title: '', platform: '', url: '', difficulty: 'easy', category: '', description: '', notes: '' })
       loadData()
     } catch (err) {
-      console.error(err)
-    }
-  }
-
-  const solveProblem = async (id: string) => {
-    setSolvingId(id)
-    const data = solveData[id] || { language: '', time: '', notes: '' }
-    try {
-      await api.post(`/coding/problems/${id}/solve`, {
-        solutionLanguage: data.language || undefined,
-        timeSpentMinutes: data.time ? parseInt(data.time) : undefined,
-        notes: data.notes || undefined
-      })
-      setSolveData(prev => { const n = { ...prev }; delete n[id]; return n })
-      loadData()
-    } catch (err) {
-      console.error(err)
-    } finally {
-      setSolvingId(null)
-    }
+      setError((err as any)?.response?.data?.detail || 'Could not save the problem. Try again.')
+    } finally { setSaving(false) }
   }
 
   const unsolveProblem = async (id: string) => {
@@ -120,7 +104,7 @@ export default function CodingTrackerPage() {
       await api.post(`/coding/problems/${id}/unsolve`)
       loadData()
     } catch (err) {
-      console.error(err)
+      setError((err as any)?.response?.data?.detail || 'Could not update the problem. Try again.')
     }
   }
 
@@ -130,7 +114,7 @@ export default function CodingTrackerPage() {
       await api.delete(`/coding/problems/${id}`)
       loadData()
     } catch (err) {
-      console.error(err)
+      setError((err as any)?.response?.data?.detail || 'Could not update the problem. Try again.')
     }
   }
 
@@ -157,6 +141,7 @@ export default function CodingTrackerPage() {
         </Button>
       </div>
 
+      {error && <div role="alert" className="border border-destructive rounded p-3 mb-4 text-sm">{error} <button className="underline" onClick={loadData}>Retry loading</button></div>}
       {/* Stats Cards */}
       {stats && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
@@ -238,7 +223,7 @@ export default function CodingTrackerPage() {
             </div>
           </div>
           <div className="flex gap-2">
-            <Button onClick={createProblem}>Save Problem</Button>
+            <Button onClick={createProblem} disabled={saving}>{saving ? 'Saving…' : 'Save Problem'}</Button>
             <Button variant="outline" onClick={() => setShowAddForm(false)}>Cancel</Button>
           </div>
         </div>
@@ -307,38 +292,15 @@ export default function CodingTrackerPage() {
                   )}
                 </div>
                 <div className="flex gap-1 ml-4">
-                  {!problem.isSolved ? (
-                    <div className="flex flex-col gap-2">
-                      <div className="flex gap-1">
-                        <input
-                          type="text"
-                          placeholder="Language"
-                          className="w-24 px-2 py-1 text-xs border rounded bg-background"
-                          value={solveData[problem.id]?.language || ''}
-                          onChange={e => setSolveData(prev => ({ ...prev, [problem.id]: { ...prev[problem.id], language: e.target.value } }))}
-                        />
-                        <input
-                          type="number"
-                          placeholder="Min"
-                          className="w-16 px-2 py-1 text-xs border rounded bg-background"
-                          value={solveData[problem.id]?.time || ''}
-                          onChange={e => setSolveData(prev => ({ ...prev, [problem.id]: { ...prev[problem.id], time: e.target.value } }))}
-                        />
-                      </div>
-                      <Button size="sm" onClick={() => solveProblem(problem.id)} disabled={solvingId === problem.id}>
-                        {solvingId === problem.id ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Solve'}
-                      </Button>
-                    </div>
-                  ) : (
-                    <Button size="sm" variant="ghost" onClick={() => unsolveProblem(problem.id)} title="Mark unsolved">
-                      <RotateCcw className="h-4 w-4" />
-                    </Button>
-                  )}
+                  {problem.isSolved && <Button size="sm" variant="ghost" onClick={() => unsolveProblem(problem.id)} title="Mark unsolved">
+                    <RotateCcw className="h-4 w-4" />
+                  </Button>}
                   <Button size="sm" variant="ghost" className="text-destructive" onClick={() => deleteProblem(problem.id)}>
                     <Trash2 className="h-4 w-4" />
                   </Button>
                 </div>
               </div>
+              <CodingAttempts problemId={problem.id} solved={problem.isSolved} attemptCount={problem.attemptCount} onSaved={loadData} />
             </div>
           ))
         )}

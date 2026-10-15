@@ -1,5 +1,6 @@
 using LifeOS.Application.DTOs.Education;
 using LifeOS.Domain.Entities;
+using LifeOS.Application.Interfaces;
 using LifeOS.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -13,10 +14,12 @@ namespace LifeOS.Api.Controllers;
 public class EducationController : ControllerBase
 {
     private readonly AppDbContext _context;
+    private readonly IEducationRecordService _records;
 
-    public EducationController(AppDbContext context)
+    public EducationController(AppDbContext context, IEducationRecordService records)
     {
         _context = context;
+        _records = records;
     }
 
     private Guid GetUserId()
@@ -121,63 +124,19 @@ public class EducationController : ControllerBase
 
     [HttpPost("degrees")]
     public async Task<ActionResult<DegreeDto>> CreateDegree(CreateDegreeRequest request, CancellationToken ct)
-    {
-        var userId = GetUserId();
-        var degree = new Degree
-        {
-            UserId = userId,
-            InstitutionId = request.InstitutionId,
-            DegreeName = request.DegreeName,
-            DegreeType = request.DegreeType,
-            Field = request.Field,
-            StartDate = request.StartDate,
-            EndDate = request.EndDate,
-            Gpa = request.Gpa,
-            Honors = request.Honors,
-            IsCurrent = request.IsCurrent
-        };
-
-        _context.Degrees.Add(degree);
-        await _context.SaveChangesAsync(ct);
-        return Ok(MapDegree(degree));
-    }
+        => Ok(await _records.SaveDegreeAsync(GetUserId(), null, request, ct));
 
     [HttpPut("degrees/{id:guid}")]
     public async Task<ActionResult<DegreeDto>> UpdateDegree(Guid id, UpdateDegreeRequest request, CancellationToken ct)
     {
-        var userId = GetUserId();
-        var degree = await _context.Degrees
-            .FirstOrDefaultAsync(d => d.Id == id && d.UserId == userId, ct);
-
-        if (degree == null) return NotFound();
-
-        degree.InstitutionId = request.InstitutionId;
-        degree.DegreeName = request.DegreeName;
-        degree.DegreeType = request.DegreeType;
-        degree.Field = request.Field;
-        degree.StartDate = request.StartDate;
-        degree.EndDate = request.EndDate;
-        degree.Gpa = request.Gpa;
-        degree.Honors = request.Honors;
-        degree.IsCurrent = request.IsCurrent;
-
-        await _context.SaveChangesAsync(ct);
-        return Ok(MapDegree(degree));
+        var result = await _records.SaveDegreeAsync(GetUserId(), id, new() { InstitutionId = request.InstitutionId, DegreeName = request.DegreeName, DegreeType = request.DegreeType,
+            Field = request.Field, StartDate = request.StartDate, EndDate = request.EndDate, Gpa = request.Gpa, Honors = request.Honors, IsCurrent = request.IsCurrent }, ct);
+        return result == null ? NotFound() : Ok(result);
     }
 
     [HttpDelete("degrees/{id:guid}")]
     public async Task<IActionResult> DeleteDegree(Guid id, CancellationToken ct)
-    {
-        var userId = GetUserId();
-        var degree = await _context.Degrees
-            .FirstOrDefaultAsync(d => d.Id == id && d.UserId == userId, ct);
-
-        if (degree == null) return NotFound();
-
-        _context.Degrees.Remove(degree);
-        await _context.SaveChangesAsync(ct);
-        return NoContent();
-    }
+        => await _records.DeleteDegreeAsync(GetUserId(), id, ct) ? NoContent() : NotFound();
 
     // ==================== COURSES ====================
     [HttpGet("courses")]
@@ -194,48 +153,14 @@ public class EducationController : ControllerBase
 
     [HttpPost("courses")]
     public async Task<ActionResult<CourseDto>> CreateCourse(CreateCourseRequest request, CancellationToken ct)
-    {
-        var userId = GetUserId();
-        var course = new Course
-        {
-            UserId = userId,
-            DegreeId = request.DegreeId,
-            InstitutionId = request.InstitutionId,
-            Code = request.Code,
-            Name = request.Name,
-            Grade = request.Grade,
-            Credits = request.Credits,
-            Term = request.Term,
-            Description = request.Description,
-            IsMajorRelated = request.IsMajorRelated
-        };
-
-        _context.Courses.Add(course);
-        await _context.SaveChangesAsync(ct);
-        return Ok(MapCourse(course));
-    }
+        => Ok(await _records.SaveCourseAsync(GetUserId(), null, request, ct));
 
     [HttpPut("courses/{id:guid}")]
     public async Task<ActionResult<CourseDto>> UpdateCourse(Guid id, UpdateCourseRequest request, CancellationToken ct)
     {
-        var userId = GetUserId();
-        var course = await _context.Courses
-            .FirstOrDefaultAsync(c => c.Id == id && c.UserId == userId, ct);
-
-        if (course == null) return NotFound();
-
-        course.DegreeId = request.DegreeId;
-        course.InstitutionId = request.InstitutionId;
-        course.Code = request.Code;
-        course.Name = request.Name;
-        course.Grade = request.Grade;
-        course.Credits = request.Credits;
-        course.Term = request.Term;
-        course.Description = request.Description;
-        course.IsMajorRelated = request.IsMajorRelated;
-
-        await _context.SaveChangesAsync(ct);
-        return Ok(MapCourse(course));
+        var result = await _records.SaveCourseAsync(GetUserId(), id, new() { DegreeId = request.DegreeId, InstitutionId = request.InstitutionId, Code = request.Code, Name = request.Name,
+            Grade = request.Grade, Credits = request.Credits, Term = request.Term, Description = request.Description, IsMajorRelated = request.IsMajorRelated }, ct);
+        return result == null ? NotFound() : Ok(result);
     }
 
     [HttpDelete("courses/{id:guid}")]
@@ -259,15 +184,15 @@ public class EducationController : ControllerBase
         Name = i.Name,
         InstitutionType = i.InstitutionType,
         Location = i.Location,
-        Degrees = i.Degrees.Select(MapDegree).ToList(),
-        UnassignedCourses = i.UnassignedCourses.Select(MapCourse).ToList()
+        Degrees = i.Degrees.Where(d => d.UserId == i.UserId).Select(MapDegree).ToList(),
+        UnassignedCourses = i.UnassignedCourses.Where(c => c.UserId == i.UserId && c.DegreeId == null).Select(MapCourse).ToList()
     };
 
     private DegreeDto MapDegree(Degree d) => new()
     {
         Id = d.Id,
         InstitutionId = d.InstitutionId,
-        InstitutionName = d.Institution?.Name,
+        InstitutionName = d.Institution?.UserId == d.UserId ? d.Institution.Name : null,
         DegreeName = d.DegreeName,
         DegreeType = d.DegreeType,
         Field = d.Field,
@@ -276,7 +201,7 @@ public class EducationController : ControllerBase
         Gpa = d.Gpa,
         Honors = d.Honors,
         IsCurrent = d.IsCurrent,
-        Courses = d.Courses?.Select(MapCourse).ToList() ?? []
+        Courses = d.Courses?.Where(c => c.UserId == d.UserId).Select(MapCourse).ToList() ?? []
     };
 
     private static CourseDto MapCourse(Course c) => new()
