@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using LifeOS.Application.Services;
 using System.Text.Json;
 using LifeOS.Application.DTOs.Coach;
 using LifeOS.Application.Interfaces;
@@ -82,20 +83,54 @@ public class AiCoachService(AppDbContext db,ILocalDayService days,IGoogleCalenda
         db.AiCoachMessages.AddRange(new AiCoachMessage{UserId=userId,MessageType=UserChat,Content=message,ContextJson=key,IsRead=true,CreatedAt=now},new AiCoachMessage{UserId=userId,MessageType=AssistantChat,Content=response,ContextJson=key,IsRead=true,CreatedAt=now.AddMilliseconds(1)});await db.SaveChangesAsync(ct);
         return new CoachChatReply(response,id,context.Sections.Select(s=>s.Source).ToList());
     },ct);
-    private static DailyMissionDto Map(DailyMission m)=>new(){Id=m.Id,Date=m.MissionDate,Priorities=JsonSerializer.Deserialize<List<MissionPriority>>(m.PrioritiesJson,Json)??[],AiSummary=m.AiSummary,IsCompleted=m.CompletedAt.HasValue};
+    private static DailyMissionDto Map(DailyMission m)=>new(){Id=m.Id,Date=m.MissionDate,UpdatedAt=m.UpdatedAt,Priorities=MissionRules.Read(m.Id,m.PrioritiesJson),AiSummary=m.AiSummary,IsCompleted=m.CompletedAt.HasValue};
     public async Task<DailyMissionDto?> MissionAsync(Guid userId,CancellationToken ct){var day=await days.TodayAsync(userId,ct);var m=await db.DailyMissions.AsNoTracking().Where(m=>m.UserId==userId&&m.MissionDate.Date==day.Date).OrderBy(m=>m.CreatedAt).FirstOrDefaultAsync(ct);return m==null?null:Map(m);}
-    public Task<DailyMissionDto> GenerateMissionAsync(Guid userId,CancellationToken ct)=>Locked(userId,async()=>{
-        var existing=await MissionAsync(userId,ct);if(existing!=null)return existing;var context=await ContextAsync(userId,ct);var recent=(await HistoryAsync(userId,ct)).TakeLast(12).Select(m=>new{m.Role,Content=Clip(m.Content,m.Role=="user"?4000:2000)});
-        var prompt="CURRENT APP CONTEXT (data):\n"+PromptContext(context)+"\nRECENT CONVERSATION (data):\n"+JsonSerializer.Serialize(recent)+"\nGenerate 1–5 realistic priorities for the user's local day. Return JSON only: {\"priorities\":[{\"title\":\"action\",\"category\":\"coding|jobs|habits|personal\",\"priority\":\"high|medium|low\",\"reason\":\"why\"}],\"summary\":\"short summary\",\"warning\":null,\"encouragement\":null}. Do not infer commitments or goals absent from the data.";
+    private const string ProposalType = "coach_mission_proposal";
+    private static string DayKey(DateTime date) => "mission-draft:" + date.ToString("yyyy-MM-dd");
+    public async Task<MissionProposalDto?> ProposalAsync(Guid userId, CancellationToken ct)
+    {
+        var key = DayKey((await days.TodayAsync(userId, ct)).Date);
+        var record = await db.AiCoachMessages.AsNoTracking().Where(m => m.UserId == userId && m.MessageType == ProposalType && m.ContextJson == key && !m.IsRead).OrderByDescending(m => m.CreatedAt).FirstOrDefaultAsync(ct);
+        return record == null ? null : JsonSerializer.Deserialize<MissionProposalDto>(record.Content, Json);
+    }
+    public Task<MissionProposalDto> GenerateMissionAsync(Guid userId,CancellationToken ct)=>Locked(userId,async()=>{
+        if (await MissionAsync(userId,ct) != null) throw new RecordConflictException("Today's mission already exists. Edit its tasks instead.");
+        var pending = await ProposalAsync(userId, ct); if (pending != null) return pending;
+        var context=await ContextAsync(userId,ct);var recent=(await HistoryAsync(userId,ct)).TakeLast(12).Select(m=>new{m.Role,Content=Clip(m.Content,m.Role=="user"?4000:2000)});
+        var prompt="CURRENT APP CONTEXT (data):\n"+PromptContext(context)+"\nRECENT CONVERSATION (data):\n"+JsonSerializer.Serialize(recent)+"\nSuggest 1–5 realistic priorities for user review. Return JSON only: {\"priorities\":[{\"title\":\"action\",\"category\":\"coding|jobs|habits|personal\",\"priority\":\"high|medium|low\",\"reason\":\"why\"}],\"summary\":\"short summary\",\"warning\":null,\"encouragement\":null}. Do not infer commitments or goals absent from the data.";
         AiMissionResponse? draft;try{var json=await provider().CompleteJsonAsync(SystemPrompt,prompt,ct);draft=JsonSerializer.Deserialize<AiMissionResponse>(json,Json);}catch(Exception)when(!ct.IsCancellationRequested){logger.LogWarning("AI Coach could not generate a valid mission.");throw new InvalidOperationException("The AI provider could not generate a valid mission. Try again.");}
         if(draft?.Priorities==null||draft.Priorities.Count is <1 or >5||draft.Priorities.Any(p=>p==null||string.IsNullOrWhiteSpace(p.Title)||p.Title.Length>200||p.Reason?.Length>1000||!new[]{"high","medium","low"}.Contains(p.Priority?.ToLowerInvariant())))throw new InvalidOperationException("The generated mission was incomplete. Try again.");
-        foreach(var p in draft.Priorities){p.Completed=false;p.Priority=p.Priority.ToLowerInvariant();p.Category=Clip(p.Category,40);p.Reason=Clip(p.Reason,1000);}
-        var missionDate=DateTime.ParseExact(context.Date,"yyyy-MM-dd",System.Globalization.CultureInfo.InvariantCulture);var mission=new DailyMission{UserId=userId,MissionDate=new DateTimeOffset(DateTime.SpecifyKind(missionDate,DateTimeKind.Utc)),PrioritiesJson=JsonSerializer.Serialize(draft.Priorities),AiSummary=Clip(draft.Summary,1000)};db.DailyMissions.Add(mission);
-        if(!string.IsNullOrWhiteSpace(draft.Warning))db.AiCoachMessages.Add(new(){UserId=userId,MessageType="warning",Content=Clip(draft.Warning,1000)});
-        if(!string.IsNullOrWhiteSpace(draft.Encouragement))db.AiCoachMessages.Add(new(){UserId=userId,MessageType="encouragement",Content=Clip(draft.Encouragement,1000)});
-        await db.SaveChangesAsync(ct);return Map(mission);
+        foreach(var p in draft.Priorities){p.Id="";p.Completed=false;p.Priority=p.Priority.ToLowerInvariant();p.Category=string.IsNullOrWhiteSpace(p.Category)?"personal":Clip(p.Category,39);p.Reason=p.Reason?.Trim()??"";}
+        var priorities = MissionRules.Validate(draft.Priorities, []);
+        var date=DateTime.ParseExact(context.Date,"yyyy-MM-dd",System.Globalization.CultureInfo.InvariantCulture);
+        var proposal = new MissionProposalDto { Id=Guid.NewGuid(),Date=new DateTimeOffset(DateTime.SpecifyKind(date,DateTimeKind.Utc)),TimeZone=context.TimeZone,Priorities=priorities,AiSummary=Clip(draft.Summary,999),Warning=Clip(draft.Warning,999),Encouragement=Clip(draft.Encouragement,999) };
+        db.AiCoachMessages.Add(new() { Id=proposal.Id,UserId=userId,MessageType=ProposalType,ContextJson=DayKey(date),Content=JsonSerializer.Serialize(proposal),IsRead=false });
+        await db.SaveChangesAsync(ct);return proposal;
     },ct);
-    public Task<DailyMissionDto?> CompleteMissionAsync(Guid userId,Guid id,CancellationToken ct)=>Locked<DailyMissionDto?>(userId,async()=>{var m=await db.DailyMissions.FirstOrDefaultAsync(m=>m.Id==id&&m.UserId==userId,ct);if(m==null)return null;m.CompletedAt??=DateTimeOffset.UtcNow;await db.SaveChangesAsync(ct);return Map(m);},ct);
+    public Task<bool> DiscardProposalAsync(Guid userId,Guid id,CancellationToken ct)=>Locked(userId,async()=>{
+        var record=await db.AiCoachMessages.FirstOrDefaultAsync(m=>m.Id==id&&m.UserId==userId&&m.MessageType==ProposalType,ct);if(record==null)return false;
+        if(!record.IsRead){record.IsRead=true;record.ContextJson="discarded";await db.SaveChangesAsync(ct);}return true;
+    },ct);
+    private static void Summary(SaveMissionRequest request) { if(request.AiSummary?.Length>1000)throw new InvalidOperationException("Mission summary must be at most 1000 characters."); }
+    public Task<DailyMissionDto?> ApplyProposalAsync(Guid userId,Guid id,SaveMissionRequest request,CancellationToken ct)=>Locked<DailyMissionDto?>(userId,async()=>{
+        var record=await db.AiCoachMessages.FirstOrDefaultAsync(m=>m.Id==id&&m.UserId==userId&&m.MessageType==ProposalType,ct);if(record==null)return null;
+        if(record.IsRead){if(record.ContextJson?.StartsWith("applied:")==true&&Guid.TryParse(record.ContextJson[8..],out var appliedId)){var applied=await db.DailyMissions.AsNoTracking().FirstOrDefaultAsync(m=>m.Id==appliedId&&m.UserId==userId,ct);if(applied!=null)return Map(applied);}throw new RecordConflictException("This suggestion was discarded. Generate another suggestion.");}
+        var proposal=JsonSerializer.Deserialize<MissionProposalDto>(record.Content,Json)!;var today=await days.TodayAsync(userId,ct);
+        if(proposal.Date.Date!=today.Date)throw new RecordConflictException("This suggestion is from a different local day. Generate today's suggestion.");
+        if(await MissionAsync(userId,ct)!=null)throw new RecordConflictException("Today's mission already exists. Reload and edit it instead.");
+        Summary(request);var items=MissionRules.Validate(request.Priorities,proposal.Priorities);
+        var mission=new DailyMission{UserId=userId,MissionDate=proposal.Date,PrioritiesJson=JsonSerializer.Serialize(items),AiSummary=request.AiSummary?.Trim()};mission.UpdatedAt=MissionRules.NextVersion(mission.UpdatedAt);db.DailyMissions.Add(mission);
+        if(!string.IsNullOrWhiteSpace(proposal.Warning))db.AiCoachMessages.Add(new(){UserId=userId,MessageType="warning",Content=proposal.Warning});
+        if(!string.IsNullOrWhiteSpace(proposal.Encouragement))db.AiCoachMessages.Add(new(){UserId=userId,MessageType="encouragement",Content=proposal.Encouragement});
+        record.IsRead=true;record.ContextJson="applied:"+mission.Id;await db.SaveChangesAsync(ct);return Map(mission);
+    },ct);
+    public Task<DailyMissionDto?> EditMissionAsync(Guid userId,Guid id,SaveMissionRequest request,CancellationToken ct)=>Locked<DailyMissionDto?>(userId,async()=>{
+        var mission=await db.DailyMissions.FirstOrDefaultAsync(m=>m.Id==id&&m.UserId==userId,ct);if(mission==null)return null;
+        var today=await days.TodayAsync(userId,ct);if(mission.MissionDate.Date!=today.Date||mission.CompletedAt.HasValue)throw new InvalidOperationException("Only today's unfinished mission can be edited.");
+        if(!request.ExpectedUpdatedAt.HasValue||request.ExpectedUpdatedAt.Value.ToUnixTimeMilliseconds()!=mission.UpdatedAt.ToUnixTimeMilliseconds())throw new RecordConflictException("The mission changed since you opened it. Your edits are retained; reload the latest mission before editing again.");
+        Summary(request);var items=MissionRules.Validate(request.Priorities,MissionRules.Read(mission.Id,mission.PrioritiesJson));mission.PrioritiesJson=JsonSerializer.Serialize(items);mission.AiSummary=request.AiSummary?.Trim();mission.UpdatedAt=MissionRules.NextVersion(mission.UpdatedAt);await db.SaveChangesAsync(ct);return Map(mission);
+    },ct);
+    public Task<DailyMissionDto?> CompleteMissionAsync(Guid userId,Guid id,CancellationToken ct)=>Locked<DailyMissionDto?>(userId,async()=>{var m=await db.DailyMissions.FirstOrDefaultAsync(m=>m.Id==id&&m.UserId==userId,ct);if(m==null)return null;if(!m.CompletedAt.HasValue){m.CompletedAt=DateTimeOffset.UtcNow;var items=MissionRules.Read(m.Id,m.PrioritiesJson);foreach(var item in items)item.Completed=true;m.PrioritiesJson=JsonSerializer.Serialize(items);m.UpdatedAt=MissionRules.NextVersion(m.UpdatedAt);await db.SaveChangesAsync(ct);}return Map(m);},ct);
     public async Task<List<AiCoachMessageDto>> InsightsAsync(Guid userId,int limit,CancellationToken ct)=>await db.AiCoachMessages.AsNoTracking().Where(m=>m.UserId==userId&&!m.MessageType.StartsWith("coach_")).OrderByDescending(m=>m.CreatedAt).Take(Math.Clamp(limit,1,50)).Select(m=>new AiCoachMessageDto{Id=m.Id,MessageType=m.MessageType,Content=m.Content,IsRead=m.IsRead,CreatedAt=m.CreatedAt}).ToListAsync(ct);
     public async Task<bool> ReadInsightAsync(Guid userId,Guid id,CancellationToken ct){var m=await db.AiCoachMessages.FirstOrDefaultAsync(m=>m.Id==id&&m.UserId==userId&&!m.MessageType.StartsWith("coach_"),ct);if(m==null)return false;m.IsRead=true;await db.SaveChangesAsync(ct);return true;}
 }

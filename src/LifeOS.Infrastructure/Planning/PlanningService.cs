@@ -22,7 +22,7 @@ public class PlanningService(AppDbContext db,ILocalDayService days,ICalendarServ
         var applications=await db.JobApplications.AsNoTracking().Where(a=>a.UserId==userId && a.FollowUpDate!=null && a.FollowUpDate<end.UtcDateTime && a.Status!="rejected" && a.Status!="withdrawn").Include(a=>a.Job).ToListAsync(ct);
         result.Actions.AddRange(applications.Select(a=>new DailyActionDto("followup:"+a.Id,"followup",a.Id,"Follow up with "+a.Job.Company,a.Job.Title,a.FollowUpDate<start.UtcDateTime?0:1,false,new DateTimeOffset(DateTime.SpecifyKind(a.FollowUpDate!.Value,DateTimeKind.Utc)),"/jobs/applications?application="+a.Id,true)));
         var mission=await db.DailyMissions.AsNoTracking().FirstOrDefaultAsync(m=>m.UserId==userId && m.MissionDate.Date==day.Date,ct);
-        if(mission!=null){var items=JsonSerializer.Deserialize<List<MissionItem>>(mission.PrioritiesJson,Json)??[];result.Actions.AddRange(items.Select((item,index)=>new DailyActionDto($"mission:{mission.Id}:{index}","mission",mission.Id,item.Title,item.Reason,item.Priority.ToLowerInvariant()=="high"?1:item.Priority.ToLowerInvariant()=="low"?3:2,item.Completed||mission.CompletedAt.HasValue,null,"/ai-coach",true)));}
+        if(mission!=null){var items=MissionRules.Read(mission.Id,mission.PrioritiesJson);result.Actions.AddRange(items.Select(item=>new DailyActionDto($"mission:{mission.Id}:{item.Id}","mission",mission.Id,item.Title,item.Reason,item.Priority.ToLowerInvariant()=="high"?1:item.Priority.ToLowerInvariant()=="low"?3:2,item.Completed||mission.CompletedAt.HasValue,null,"/ai-coach",true)));}
         var problems=await db.CodingProblems.AsNoTracking().Where(p=>p.UserId==userId && p.IsSolved && p.SolvedAt.HasValue).Select(p=>new{p.Id,p.Title,p.SolvedAt,Attempts=p.Attempts.Count}).ToListAsync(ct);
         foreach(var p in problems){var due=day.DateOf(p.SolvedAt!.Value).AddDays(ReviewDays(p.Attempts));if(due<=day.Date)result.Actions.Add(new("review:"+p.Id,"review",p.Id,"Review: "+p.Title,"Revisit your solution and explain the approach.",2,false,day.Offset((int)(due-day.Date).TotalDays).Start,"/coding?problem="+p.Id,true));}
         var local=await calendar.GetAsync(userId,start,end,ct);
@@ -36,12 +36,19 @@ public class PlanningService(AppDbContext db,ILocalDayService days,ICalendarServ
     {
         var parts=actionId.Split(':');if(parts.Length<2 || !Guid.TryParse(parts[1],out var id))return false;
         if(parts[0]=="followup")return await FollowUpAsync(userId,id,new(null,"Follow-up completed."),ct);
-        if(parts[0]=="mission" && parts.Length==3 && int.TryParse(parts[2],out var index)){
-            await using var transaction=await db.Database.BeginTransactionAsync(ct);
-            var count=await db.DailyMissions.Where(m=>m.Id==id && m.UserId==userId).ExecuteUpdateAsync(s=>s.SetProperty(m=>m.UpdatedAt,DateTimeOffset.UtcNow),ct);if(count==0)return false;
-            var mission=await db.DailyMissions.SingleAsync(m=>m.Id==id && m.UserId==userId,ct);var items=JsonSerializer.Deserialize<List<MissionItem>>(mission.PrioritiesJson,Json)??[];
-            if(index<0 || index>=items.Count)return false;items[index].Completed=true;mission.PrioritiesJson=JsonSerializer.Serialize(items);if(items.All(i=>i.Completed))mission.CompletedAt=DateTimeOffset.UtcNow;
-            await db.SaveChangesAsync(ct);await transaction.CommitAsync(ct);return true;
+        if(parts[0]=="mission" && parts.Length==3){
+            await using var transaction=db.Database.IsRelational()?await db.Database.BeginTransactionAsync(ct):null;
+            if(transaction!=null){var key=BitConverter.ToInt64(userId.ToByteArray(),0)^0x434f414348;await db.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock({key})",ct);}
+            var mission=await db.DailyMissions.FirstOrDefaultAsync(m=>m.Id==id && m.UserId==userId,ct);if(mission==null)return false;
+            var items=MissionRules.Read(mission.Id,mission.PrioritiesJson);var item=items.FirstOrDefault(i=>i.Id==parts[2]);
+            if(item==null && int.TryParse(parts[2],out var index)){
+                var raw=JsonSerializer.Deserialize<List<LifeOS.Application.DTOs.Coach.MissionPriority>>(mission.PrioritiesJson,Json)??[];
+                if(raw.Any(i=>!string.IsNullOrEmpty(i.Id)))throw new RecordConflictException("Mission task order changed. Reload your daily plan before completing a task.");
+                if(index>=0&&index<items.Count)item=items[index];
+            }
+            if(item==null)return false;
+            if(!item.Completed&&!mission.CompletedAt.HasValue){item.Completed=true;mission.PrioritiesJson=JsonSerializer.Serialize(items);if(items.All(i=>i.Completed))mission.CompletedAt=DateTimeOffset.UtcNow;mission.UpdatedAt=MissionRules.NextVersion(mission.UpdatedAt);await db.SaveChangesAsync(ct);}
+            if(transaction!=null)await transaction.CommitAsync(ct);return true;
         }
         if(parts[0]=="review"){
             var day=await days.TodayAsync(userId,ct);await using var transaction=await db.Database.BeginTransactionAsync(ct);

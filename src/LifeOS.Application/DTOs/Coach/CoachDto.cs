@@ -2,6 +2,7 @@ namespace LifeOS.Application.DTOs.Coach;
 public class DailyMissionDto
 {
     public Guid Id { get; set; }
+    public DateTimeOffset UpdatedAt { get; set; }
     public DateTimeOffset Date { get; set; }
     public List<MissionPriority> Priorities { get; set; } = [];
     public string? AiSummary { get; set; }
@@ -10,6 +11,7 @@ public class DailyMissionDto
 
 public class MissionPriority
 {
+    public string Id { get; set; } = string.Empty;
     public bool Completed { get; set; }
     public string Title { get; set; } = string.Empty;
     public string Category { get; set; } = string.Empty;
@@ -43,3 +45,20 @@ public record CoachMemoryDto(Guid Id,string Content,DateTimeOffset UpdatedAt);
 public record CoachChatRequest(string Message,Guid? RequestId=null);
 public record CoachChatReply(string Response,Guid RequestId,List<string> ContextSources,bool WasReplay=false);
 public record CoachMemoryRequest(string Content);
+
+public class MissionProposalDto
+{
+    public Guid Id { get; set; }
+    public DateTimeOffset Date { get; set; }
+    public string TimeZone { get; set; } = string.Empty;
+    public List<MissionPriority> Priorities { get; set; } = [];
+    public string? AiSummary { get; set; }
+    public string? Warning { get; set; }
+    public string? Encouragement { get; set; }
+}
+public class SaveMissionRequest
+{
+    public DateTimeOffset? ExpectedUpdatedAt { get; set; }
+    public List<MissionPriority> Priorities { get; set; } = [];
+    public string? AiSummary { get; set; }
+}

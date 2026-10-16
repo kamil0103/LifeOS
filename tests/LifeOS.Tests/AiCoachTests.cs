@@ -63,7 +63,7 @@ public class AiCoachTests
     public async Task ConcurrentMissionRequestsGenerateOnceAndUseTheLocalDate()
     {
         using var f=new Fixture();f.Ai.Setup(a=>a.CompleteJsonAsync(It.IsAny<string>(),It.IsAny<string>(),It.IsAny<CancellationToken>())).ReturnsAsync("""{"priorities":[{"title":"Practice C++","category":"coding","priority":"high","reason":"Your saved goal","completed":true}],"summary":"A focused day"}""");
-        var results=await Task.WhenAll(Enumerable.Range(0,5).Select(_=>f.Coach.GenerateMissionAsync(f.User,default)));Assert.Single(results.Select(m=>m.Id).Distinct());Assert.Equal(HabitApiTests.Factory.Day.Date,results[0].Date.Date);Assert.False(results[0].Priorities[0].Completed);
+        var results=await Task.WhenAll(Enumerable.Range(0,5).Select(_=>f.Coach.GenerateMissionAsync(f.User,default)));Assert.Single(results.Select(m=>m.Id).Distinct());Assert.Equal(HabitApiTests.Factory.Day.Date,results[0].Date.Date);Assert.False(results[0].Priorities[0].Completed);Assert.Empty(f.Db.DailyMissions);Assert.NotNull(await f.Coach.ProposalAsync(f.User,default));
         f.Ai.Verify(a=>a.CompleteJsonAsync(It.IsAny<string>(),It.IsAny<string>(),It.IsAny<CancellationToken>()),Times.Once);
     }
     [Fact]

@@ -7,7 +7,11 @@ namespace LifeOS.Api.Controllers;
 public class AiCoachController(IAiCoachService coach,ICurrentUserService user) : ControllerBase
 {
     private Guid UserId=>user.UserId??throw new UnauthorizedAccessException();
-    [HttpPost("generate-mission")] public Task<DailyMissionDto> GenerateMission(CancellationToken ct)=>coach.GenerateMissionAsync(UserId,ct);
+    [HttpPost("generate-mission")] public Task<MissionProposalDto> GenerateMission(CancellationToken ct)=>coach.GenerateMissionAsync(UserId,ct);
+    [HttpGet("mission/proposal")] public async Task<ActionResult<MissionProposalDto>> Proposal(CancellationToken ct){var p=await coach.ProposalAsync(UserId,ct);return p==null?NotFound():Ok(p);}
+    [HttpDelete("mission/proposal/{id:guid}")] public async Task<IActionResult> Discard(Guid id,CancellationToken ct)=>await coach.DiscardProposalAsync(UserId,id,ct)?NoContent():NotFound();
+    [HttpPost("mission/proposal/{id:guid}/apply")] public async Task<ActionResult<DailyMissionDto>> Apply(Guid id,SaveMissionRequest request,CancellationToken ct){var m=await coach.ApplyProposalAsync(UserId,id,request,ct);return m==null?NotFound():Ok(m);}
+    [HttpPut("mission/{id:guid}")] public async Task<ActionResult<DailyMissionDto>> Edit(Guid id,SaveMissionRequest request,CancellationToken ct){var m=await coach.EditMissionAsync(UserId,id,request,ct);return m==null?NotFound():Ok(m);}
     [HttpGet("mission")] public async Task<ActionResult<DailyMissionDto>> Mission(CancellationToken ct){var m=await coach.MissionAsync(UserId,ct);return m==null?NotFound():Ok(m);}
     [HttpPost("mission/{id:guid}/complete")] public async Task<ActionResult<DailyMissionDto>> Complete(Guid id,CancellationToken ct){var m=await coach.CompleteMissionAsync(UserId,id,ct);return m==null?NotFound():Ok(m);}
     [HttpGet("messages")] public Task<List<AiCoachMessageDto>> Messages([FromQuery]int limit=10,CancellationToken ct=default)=>coach.InsightsAsync(UserId,limit,ct);
