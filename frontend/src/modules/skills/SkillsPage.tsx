@@ -1,5 +1,9 @@
+import SkillEvidencePanel from './SkillEvidencePanel'
+import { notify } from '@/lib/notify'
 import { useState, useEffect } from 'react'
 import api from '@/lib/api'
+import { useRecordActions } from '@/hooks/useRecordActions'
+import { useUnsavedChanges } from '@/hooks/useUnsavedChanges'
 import { Button } from '@/components/ui/button'
 import { Loader2, Plus, Trash2, Pencil } from 'lucide-react'
 
@@ -9,6 +13,7 @@ interface Skill {
   category: string
   proficiency: string
   source?: string
+  learningStatus?: string
 }
 
 interface Certificate {
@@ -20,6 +25,7 @@ interface Certificate {
   credentialId?: string
   url?: string
   description?: string
+  expiryStatus?: string
 }
 
 const categories = [
@@ -31,10 +37,11 @@ const categories = [
 const proficiencies = ['Beginner', 'Intermediate', 'Advanced', 'Expert']
 
 export default function SkillsPage() {
+  const { busy, error, setError, mutate } = useRecordActions()
   const [skills, setSkills] = useState<Skill[]>([])
   const [certificates, setCertificates] = useState<Certificate[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState<'skills' | 'certificates'>('skills')
+  const [activeTab, setActiveTab] = useState<'skills' | 'certificates'>(new URLSearchParams(window.location.search).get('tab') === 'certificates' ? 'certificates' : 'skills')
 
   const [isExtractingAi, setIsExtractingAi] = useState(false)
   const [extractedModalSkills, setExtractedModalSkills] = useState<Array<{ name: string; category: string; proficiency: string; selected: boolean }>>([])
@@ -48,26 +55,20 @@ export default function SkillsPage() {
       setShowExtractModal(true)
     } catch (err) {
       console.error(err)
-      alert('AI skill extraction failed')
+      notify('AI skill extraction failed')
     } finally {
       setIsExtractingAi(false)
     }
   }
 
-  const saveSelectedExtractedSkills = async (auto: boolean = false) => {
-    try {
-      const skillsToSave = auto ? extractedModalSkills : extractedModalSkills.filter(s => s.selected)
-      await api.post('/skills/save-extracted', skillsToSave)
-      setShowExtractModal(false)
-      loadData()
-      alert('Skills saved successfully!')
-    } catch (err) {
-      console.error(err)
-      alert('Failed to save extracted skills')
-    }
-  }
+  const saveSelectedExtractedSkills = () => mutate(async () => {
+    const selected = extractedModalSkills.filter(s => s.selected)
+    if (!selected.length) return
+    await api.post('/skills/save-extracted', selected)
+    setShowExtractModal(false); await loadData()
+  })
   const [showAddSkill, setShowAddSkill] = useState(false)
-  const [newSkill, setNewSkill] = useState({ name: '', category: 'Programming Language', proficiency: 'Beginner', source: '' })
+  const [newSkill, setNewSkill] = useState({ name: '', category: 'Programming Language', proficiency: 'Beginner', source: '', learningStatus: 'unspecified' })
 
   const [showAddCert, setShowAddCert] = useState(false)
   const [newCert, setNewCert] = useState({ name: '', issuer: '', dateObtained: '', expiry: '', credentialId: '', url: '', description: '' })
@@ -76,78 +77,97 @@ export default function SkillsPage() {
     loadData()
   }, [])
 
-  const loadData = () => {
-    setIsLoading(true)
-    Promise.all([
-      api.get('/skills').then(({ data }) => setSkills(data)).catch(() => {}),
-      api.get('/skills/certificates').then(({ data }) => setCertificates(data)).catch(() => {}),
-    ]).finally(() => setIsLoading(false))
+  const loadData = async () => {
+    setIsLoading(true); setError('')
+    try {
+      const [skills, certs] = await Promise.all([api.get('/skills'), api.get('/skills/certificates')])
+      setSkills(skills.data); setCertificates(certs.data)
+    } catch { setError('Could not load skills and certificates. Try again.') }
+    finally { setIsLoading(false) }
   }
 
-  const addSkill = async () => {
-    if (!newSkill.name) return
-    await api.post('/skills', newSkill)
-    setNewSkill({ name: '', category: 'Programming Language', proficiency: 'Beginner', source: '' })
-    setShowAddSkill(false)
-    loadData()
+  const addSkill = () => {
+    return mutate(async () => {
+      if (!newSkill.name) return
+      await api.post('/skills', newSkill)
+      setNewSkill({ name: '', category: 'Programming Language', proficiency: 'Beginner', source: '', learningStatus: 'unspecified' })
+      setShowAddSkill(false)
+      await loadData()
+    })
   }
 
-  const addCert = async () => {
-    if (!newCert.name) return
-    await api.post('/skills/certificates', newCert)
-    setNewCert({ name: '', issuer: '', dateObtained: '', expiry: '', credentialId: '', url: '', description: '' })
-    setShowAddCert(false)
-    loadData()
+  const addCert = () => {
+    return mutate(async () => {
+      if (!newCert.name) return
+      await api.post('/skills/certificates', newCert)
+      setNewCert({ name: '', issuer: '', dateObtained: '', expiry: '', credentialId: '', url: '', description: '' })
+      setShowAddCert(false)
+      await loadData()
+    })
   }
 
   // Edit modals
+  const [evidenceSkill, setEvidenceSkill] = useState<Skill | null>(null)
   const [editSkill, setEditSkill] = useState<Skill | null>(null)
   const [editCert, setEditCert] = useState<Certificate | null>(null)
 
-  const saveEditSkill = async () => {
-    if (!editSkill || !editSkill.name) return
-    await api.put(`/skills/${editSkill.id}`, {
-      name: editSkill.name,
-      category: editSkill.category,
-      proficiency: editSkill.proficiency,
-      source: editSkill.source,
+  const saveEditSkill = () => {
+    return mutate(async () => {
+      if (!editSkill || !editSkill.name) return
+      await api.put(`/skills/${editSkill.id}`, {
+        name: editSkill.name,
+        category: editSkill.category,
+        proficiency: editSkill.proficiency,
+        source: editSkill.source,
+        learningStatus: editSkill.learningStatus || 'unspecified',
     })
     setEditSkill(null)
-    loadData()
+    await loadData()
+    })
   }
 
-  const saveEditCert = async () => {
-    if (!editCert || !editCert.name) return
-    await api.put(`/skills/certificates/${editCert.id}`, {
-      name: editCert.name,
-      issuer: editCert.issuer,
-      dateObtained: editCert.dateObtained,
-      expiry: editCert.expiry,
-      credentialId: editCert.credentialId,
-      url: editCert.url,
-      description: editCert.description,
+  const saveEditCert = () => {
+    return mutate(async () => {
+      if (!editCert || !editCert.name) return
+      await api.put(`/skills/certificates/${editCert.id}`, {
+        name: editCert.name,
+        issuer: editCert.issuer,
+        dateObtained: editCert.dateObtained,
+        expiry: editCert.expiry,
+        credentialId: editCert.credentialId,
+        url: editCert.url,
+        description: editCert.description,
     })
     setEditCert(null)
-    loadData()
+    await loadData()
+    })
   }
 
-  const deleteSkill = async (id: string) => {
-    if (!confirm('Delete this skill?')) return
-    await api.delete(`/skills/${id}`)
-    loadData()
+  const deleteSkill = (id: string) => {
+    return mutate(async () => {
+      if (!confirm('Delete this skill?')) return
+      await api.delete(`/skills/${id}`)
+      await loadData()
+    })
   }
 
-  const deleteCert = async (id: string) => {
-    if (!confirm('Delete this certificate?')) return
-    await api.delete(`/skills/certificates/${id}`)
-    loadData()
+  const deleteCert = (id: string) => {
+    return mutate(async () => {
+      if (!confirm('Delete this certificate?')) return
+      await api.delete(`/skills/certificates/${id}`)
+      await loadData()
+    })
   }
 
   const groupedSkills = skills.reduce((acc, skill) => {
     if (!acc[skill.category]) acc[skill.category] = []
     acc[skill.category].push(skill)
     return acc
-  }, {} as Record<string, Skill[]>)
+  }, Object.create(null) as Record<string, Skill[]>)
+
+  useUnsavedChanges((showAddSkill && !!newSkill.name.trim()) || (showAddCert && !!newCert.name.trim()) ||
+    (!!editSkill && JSON.stringify(editSkill) !== JSON.stringify(skills.find(s => s.id === editSkill.id))) ||
+    (!!editCert && JSON.stringify(editCert) !== JSON.stringify(certificates.find(c => c.id === editCert.id))) || showExtractModal)
 
   if (isLoading) {
     return (
@@ -159,6 +179,7 @@ export default function SkillsPage() {
 
   return (
     <div className="p-8 max-w-5xl mx-auto">
+      {error && <div role="alert" className="fixed top-4 left-1/2 -translate-x-1/2 z-[70] w-[min(90vw,40rem)] bg-card border border-destructive rounded p-3 text-sm">{error} <button className="underline" onClick={loadData}>Retry loading</button></div>}
       <div className="mb-8">
         <h1 className="text-3xl font-bold tracking-tight">Skills & Certificates</h1>
         <p className="text-muted-foreground mt-1">Manage your technical skills and certifications</p>
@@ -207,10 +228,11 @@ export default function SkillsPage() {
                 <select value={newSkill.proficiency} onChange={(e) => setNewSkill({ ...newSkill, proficiency: e.target.value })} className="px-3 py-2 rounded-md border bg-background text-sm">
                   {proficiencies.map(p => <option key={p} value={p}>{p}</option>)}
                 </select>
+                <label className="block text-sm">Skill status<select aria-label="New skill status" className="w-full p-2 border rounded bg-background" value={newSkill.learningStatus} onChange={e => setNewSkill({ ...newSkill, learningStatus: e.target.value })}><option value="unspecified">Unspecified</option><option value="learning">Learning</option><option value="demonstrated">Demonstrated (self-reported)</option></select></label>
                 <input placeholder="Source (e.g. Course or Project)" value={newSkill.source} onChange={(e) => setNewSkill({ ...newSkill, source: e.target.value })} className="px-3 py-2 rounded-md border bg-background text-sm md:col-span-3" />
               </div>
               <div className="mt-4 flex gap-2">
-                <Button onClick={addSkill}>Save</Button>
+                <Button disabled={busy} onClick={addSkill}>Save</Button>
                 <Button variant="outline" onClick={() => setShowAddSkill(false)}>Cancel</Button>
               </div>
             </div>
@@ -225,13 +247,13 @@ export default function SkillsPage() {
               <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider mb-4">{category}</h3>
               <div className="flex flex-wrap gap-2">
                 {catSkills.map((skill) => (
-                  <div key={skill.id} className="flex items-center gap-2 bg-accent px-3 py-2 rounded-md">
+                  <div key={skill.id} className="flex flex-wrap items-center gap-2 bg-accent px-3 py-2 rounded-md max-w-full">
                     <span className="text-sm font-medium">{skill.name}</span>
-                    <span className="text-xs text-muted-foreground">{skill.proficiency}</span>
-                    <button onClick={() => setEditSkill(skill)} className="text-muted-foreground hover:text-foreground">
+                    <span className="text-xs text-muted-foreground">{skill.proficiency} · {skill.learningStatus || 'unspecified'}</span><Button aria-label={`Evidence for ${skill.name}`} variant="outline" size="sm" onClick={() => setEvidenceSkill(skill)}>Evidence</Button>
+                    <button aria-label={`Edit ${skill.name}`} onClick={() => setEditSkill(skill)} className="text-muted-foreground hover:text-foreground">
                       <Pencil className="h-3 w-3" />
                     </button>
-                    <button onClick={() => deleteSkill(skill.id)} className="text-destructive hover:text-destructive/80">
+                    <button aria-label={`Delete ${skill.name}`} onClick={() => deleteSkill(skill.id)} className="text-destructive hover:text-destructive/80">
                       <Trash2 className="h-3 w-3" />
                     </button>
                   </div>
@@ -264,7 +286,7 @@ export default function SkillsPage() {
                 <textarea placeholder="Description" value={newCert.description} onChange={(e) => setNewCert({ ...newCert, description: e.target.value })} className="px-3 py-2 rounded-md border bg-background text-sm min-h-[80px] md:col-span-2" />
               </div>
               <div className="mt-4 flex gap-2">
-                <Button onClick={addCert}>Save</Button>
+                <Button disabled={busy} onClick={addCert}>Save</Button>
                 <Button variant="outline" onClick={() => setShowAddCert(false)}>Cancel</Button>
               </div>
             </div>
@@ -280,6 +302,7 @@ export default function SkillsPage() {
                 <div>
                   <h3 className="font-semibold">{cert.name}</h3>
                   <p className="text-sm text-muted-foreground">{cert.issuer}</p>
+                  <p className={`text-xs mt-1 ${cert.expiryStatus === 'expired' ? 'text-red-400' : cert.expiryStatus === 'expiring_soon' ? 'text-amber-400' : 'text-muted-foreground'}`}>{({ expired: 'Expired', expiring_soon: 'Expires within 30 days', valid: 'Current', no_expiry: 'No expiry date recorded', unknown: 'Check expiry date format' } as Record<string, string>)[cert.expiryStatus || 'unknown']}</p>
                   <p className="text-sm text-muted-foreground">
                     Obtained: {cert.dateObtained}
                     {cert.expiry && ` · Expires: ${cert.expiry}`}
@@ -306,9 +329,10 @@ export default function SkillsPage() {
         </div>
       )}
       {/* Edit Skill Modal */}
+      {evidenceSkill && <SkillEvidencePanel skill={evidenceSkill} onClose={() => setEvidenceSkill(null)} />}
       {editSkill && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setEditSkill(null)}>
-          <div className="bg-card border rounded-lg p-6 w-[420px]" onClick={e => e.stopPropagation()}>
+          <div className="bg-card border rounded-lg p-6 w-full max-w-[420px] mx-4" onClick={e => e.stopPropagation()}>
             <h3 className="text-lg font-semibold mb-4">Edit Skill</h3>
             <div className="space-y-3">
               <input placeholder="Skill Name" value={editSkill.name} onChange={e => setEditSkill({ ...editSkill, name: e.target.value })} className="w-full px-3 py-2 rounded-md border bg-background text-sm" />
@@ -318,11 +342,12 @@ export default function SkillsPage() {
               <select value={editSkill.proficiency} onChange={e => setEditSkill({ ...editSkill, proficiency: e.target.value })} className="w-full px-3 py-2 rounded-md border bg-background text-sm">
                 {proficiencies.map(p => <option key={p} value={p}>{p}</option>)}
               </select>
+              <label className="block text-sm">Skill status<select aria-label="Skill status" className="w-full p-2 border rounded bg-background" value={editSkill.learningStatus || 'unspecified'} onChange={e => setEditSkill({ ...editSkill, learningStatus: e.target.value })}><option value="unspecified">Unspecified</option><option value="learning">Learning</option><option value="demonstrated">Demonstrated (self-reported)</option></select></label>
               <input placeholder="Source (e.g. Course or Project)" value={editSkill.source ?? ''} onChange={e => setEditSkill({ ...editSkill, source: e.target.value })} className="w-full px-3 py-2 rounded-md border bg-background text-sm" />
             </div>
             <div className="flex gap-2 mt-5 justify-end">
               <Button variant="outline" onClick={() => setEditSkill(null)}>Cancel</Button>
-              <Button onClick={saveEditSkill}>Save</Button>
+              <Button disabled={busy} onClick={saveEditSkill}>Save</Button>
             </div>
           </div>
         </div>
@@ -331,7 +356,7 @@ export default function SkillsPage() {
       {/* Edit Certificate Modal */}
       {editCert && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setEditCert(null)}>
-          <div className="bg-card border rounded-lg p-6 w-[520px] max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+          <div className="bg-card border rounded-lg p-6 w-full max-w-[520px] mx-4 max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <h3 className="text-lg font-semibold mb-4">Edit Certificate</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <input placeholder="Certificate Name" value={editCert.name} onChange={e => setEditCert({ ...editCert, name: e.target.value })} className="px-3 py-2 rounded-md border bg-background text-sm" />
@@ -344,7 +369,7 @@ export default function SkillsPage() {
             </div>
             <div className="flex gap-2 mt-5 justify-end">
               <Button variant="outline" onClick={() => setEditCert(null)}>Cancel</Button>
-              <Button onClick={saveEditCert}>Save</Button>
+              <Button disabled={busy} onClick={saveEditCert}>Save</Button>
             </div>
           </div>
         </div>
@@ -353,7 +378,7 @@ export default function SkillsPage() {
       {/* AI Extraction Modal */}
       {showExtractModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-card border rounded-lg p-6 w-[600px] max-h-[80vh] overflow-y-auto">
+          <div className="bg-card border rounded-lg p-6 w-full max-w-[600px] mx-4 max-h-[80vh] overflow-y-auto">
             <h3 className="text-lg font-semibold mb-2">Review Extracted Skills</h3>
             <p className="text-sm text-muted-foreground mb-4">Select the skills you want to add to your profile, or edit them.</p>
             <div className="space-y-2 mb-6 max-h-[50vh] overflow-y-auto">
@@ -390,12 +415,15 @@ export default function SkillsPage() {
                   >
                     {categories.map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
+                  <select aria-label={`Proficiency for ${s.name}`} value={s.proficiency} onChange={e => setExtractedModalSkills(prev => prev.map((skill, index) => index === i ? { ...skill, proficiency: e.target.value } : skill))} className="px-2 py-1 border rounded bg-background text-sm">
+                    {proficiencies.map(p => <option key={p} value={p}>{p}</option>)}
+                  </select>
                 </div>
               ))}
             </div>
             <div className="flex gap-2 justify-end">
               <Button variant="outline" onClick={() => setShowExtractModal(false)}>Cancel</Button>
-              <Button onClick={() => saveSelectedExtractedSkills(false)}>Save Selected</Button>
+              <Button disabled={busy || !extractedModalSkills.some(s => s.selected)} onClick={() => saveSelectedExtractedSkills()}>Save Selected</Button>
             </div>
           </div>
         </div>

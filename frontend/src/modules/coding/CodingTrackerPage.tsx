@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import api from '@/lib/api'
+import CodingAttempts from './CodingAttempts'
 import { Button } from '@/components/ui/button'
 import { Loader2, Code2, Trophy, Flame, Clock, CheckCircle, Circle, RotateCcw, Plus, Trash2, Filter } from 'lucide-react'
 
@@ -43,9 +44,11 @@ export default function CodingTrackerPage() {
   const [stats, setStats] = useState<Stats | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [filterDifficulty, setFilterDifficulty] = useState<string>('')
+  const [filterCategory, setFilterCategory] = useState('')
   const [filterSolved, setFilterSolved] = useState<string>('')
   const [showAddForm, setShowAddForm] = useState(false)
-  const [solvingId, setSolvingId] = useState<string | null>(null)
+  const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
 
   const [formData, setFormData] = useState({
     title: '',
@@ -57,60 +60,44 @@ export default function CodingTrackerPage() {
     notes: ''
   })
 
-  const [solveData, setSolveData] = useState<Record<string, { language: string; time: string; notes: string }>>({})
-
   useEffect(() => {
     loadData()
-  }, [filterDifficulty, filterSolved])
+  }, [])
+
+  useEffect(() => { const id = new URLSearchParams(window.location.search).get('problem'); if (id) document.getElementById('problem-' + id)?.scrollIntoView({ block: 'center' }) }, [problems])
 
   const loadData = async () => {
     setIsLoading(true)
+    setError('')
     try {
-      const params = new URLSearchParams()
-      if (filterDifficulty) params.append('difficulty', filterDifficulty)
-      if (filterSolved) params.append('solved', filterSolved)
-
       const [{ data: probs }, { data: s }] = await Promise.all([
-        api.get(`/coding/problems?${params.toString()}`),
+        api.get('/coding/problems'),
         api.get('/coding/stats')
       ])
       setProblems(probs)
       setStats(s)
     } catch (err) {
-      console.error(err)
+      setError((err as any)?.response?.data?.detail || 'Could not load coding records. Try again.')
     } finally {
       setIsLoading(false)
     }
   }
 
+  const categories = Array.from(new Map(problems.filter(p => p.category?.trim()).map(p => [p.category!.trim().toLowerCase(), p.category!.trim()])).values()).sort((a, b) => a.localeCompare(b))
+  const hasFilters = !!(filterDifficulty || filterSolved || filterCategory)
+  const visibleProblems = problems.filter(p => (!filterDifficulty || p.difficulty === filterDifficulty) && (!filterSolved || p.isSolved === (filterSolved === 'true')) && (!filterCategory || p.category?.trim().toLowerCase() === filterCategory.toLowerCase()))
+
   const createProblem = async () => {
-    if (!formData.title.trim()) return
+    if (!formData.title.trim() || saving) return
+    setSaving(true); setError('')
     try {
       await api.post('/coding/problems', formData)
       setShowAddForm(false)
       setFormData({ title: '', platform: '', url: '', difficulty: 'easy', category: '', description: '', notes: '' })
       loadData()
     } catch (err) {
-      console.error(err)
-    }
-  }
-
-  const solveProblem = async (id: string) => {
-    setSolvingId(id)
-    const data = solveData[id] || { language: '', time: '', notes: '' }
-    try {
-      await api.post(`/coding/problems/${id}/solve`, {
-        solutionLanguage: data.language || undefined,
-        timeSpentMinutes: data.time ? parseInt(data.time) : undefined,
-        notes: data.notes || undefined
-      })
-      setSolveData(prev => { const n = { ...prev }; delete n[id]; return n })
-      loadData()
-    } catch (err) {
-      console.error(err)
-    } finally {
-      setSolvingId(null)
-    }
+      setError((err as any)?.response?.data?.detail || 'Could not save the problem. Try again.')
+    } finally { setSaving(false) }
   }
 
   const unsolveProblem = async (id: string) => {
@@ -118,7 +105,7 @@ export default function CodingTrackerPage() {
       await api.post(`/coding/problems/${id}/unsolve`)
       loadData()
     } catch (err) {
-      console.error(err)
+      setError((err as any)?.response?.data?.detail || 'Could not update the problem. Try again.')
     }
   }
 
@@ -128,7 +115,7 @@ export default function CodingTrackerPage() {
       await api.delete(`/coding/problems/${id}`)
       loadData()
     } catch (err) {
-      console.error(err)
+      setError((err as any)?.response?.data?.detail || 'Could not update the problem. Try again.')
     }
   }
 
@@ -155,6 +142,7 @@ export default function CodingTrackerPage() {
         </Button>
       </div>
 
+      {error && <div role="alert" className="border border-destructive rounded p-3 mb-4 text-sm">{error} <button className="underline" onClick={loadData}>Retry loading</button></div>}
       {/* Stats Cards */}
       {stats && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
@@ -236,39 +224,45 @@ export default function CodingTrackerPage() {
             </div>
           </div>
           <div className="flex gap-2">
-            <Button onClick={createProblem}>Save Problem</Button>
+            <Button onClick={createProblem} disabled={saving}>{saving ? 'Saving…' : 'Save Problem'}</Button>
             <Button variant="outline" onClick={() => setShowAddForm(false)}>Cancel</Button>
           </div>
         </div>
       )}
 
       {/* Filters */}
-      <div className="flex gap-3 mb-4 items-center">
+      <div className="flex flex-wrap gap-3 mb-4 items-center">
         <Filter className="h-4 w-4 text-muted-foreground" />
-        <select className="px-3 py-1 border rounded-md bg-background text-sm" value={filterDifficulty} onChange={e => setFilterDifficulty(e.target.value)}>
+        <select aria-label="Difficulty filter" className="px-3 py-1 border rounded-md bg-background text-sm" value={filterDifficulty} onChange={e => setFilterDifficulty(e.target.value)}>
           <option value="">All Difficulties</option>
           <option value="easy">Easy</option>
           <option value="medium">Medium</option>
           <option value="hard">Hard</option>
         </select>
-        <select className="px-3 py-1 border rounded-md bg-background text-sm" value={filterSolved} onChange={e => setFilterSolved(e.target.value)}>
+        <select aria-label="Status filter" className="px-3 py-1 border rounded-md bg-background text-sm" value={filterSolved} onChange={e => setFilterSolved(e.target.value)}>
           <option value="">All Status</option>
           <option value="true">Solved</option>
           <option value="false">Unsolved</option>
         </select>
+        <select aria-label="Topic filter" className="px-3 py-1 border rounded-md bg-background text-sm" value={filterCategory} onChange={e => setFilterCategory(e.target.value)}>
+          <option value="">All Topics</option>
+          {categories.map(category => <option key={category.toLowerCase()} value={category}>{category}</option>)}
+        </select>
+        {hasFilters && <Button variant="outline" size="sm" onClick={() => { setFilterDifficulty(''); setFilterSolved(''); setFilterCategory('') }}>Clear filters</Button>}
+        <span className="text-sm text-muted-foreground" role="status">{visibleProblems.length} of {problems.length} problems</span>
       </div>
 
       {/* Problem List */}
       <div className="space-y-3">
-        {problems.length === 0 ? (
+        {visibleProblems.length === 0 ? (
           <div className="bg-card border rounded-lg p-8 text-center">
             <Code2 className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-            <p className="text-muted-foreground">No problems tracked yet.</p>
-            <p className="text-sm text-muted-foreground mt-1">Add your first problem to start tracking.</p>
+            <p className="text-muted-foreground">{hasFilters ? 'No problems match these filters.' : 'No problems tracked yet.'}</p>
+            <p className="text-sm text-muted-foreground mt-1">{hasFilters ? 'Change or clear your filters to see more problems.' : 'Add your first problem to start tracking.'}</p>
           </div>
         ) : (
-          problems.map(problem => (
-            <div key={problem.id} className={`bg-card border rounded-lg p-4 ${problem.isSolved ? 'opacity-80' : ''}`}>
+          visibleProblems.map(problem => (
+            <div id={'problem-' + problem.id} key={problem.id} className={`${new URLSearchParams(window.location.search).get('problem') === problem.id ? 'ring-2 ring-blue-500' : ''} bg-card border rounded-lg p-4 ${problem.isSolved ? 'opacity-80' : ''}`}>
               <div className="flex items-start justify-between">
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-1">
@@ -305,38 +299,15 @@ export default function CodingTrackerPage() {
                   )}
                 </div>
                 <div className="flex gap-1 ml-4">
-                  {!problem.isSolved ? (
-                    <div className="flex flex-col gap-2">
-                      <div className="flex gap-1">
-                        <input
-                          type="text"
-                          placeholder="Language"
-                          className="w-24 px-2 py-1 text-xs border rounded bg-background"
-                          value={solveData[problem.id]?.language || ''}
-                          onChange={e => setSolveData(prev => ({ ...prev, [problem.id]: { ...prev[problem.id], language: e.target.value } }))}
-                        />
-                        <input
-                          type="number"
-                          placeholder="Min"
-                          className="w-16 px-2 py-1 text-xs border rounded bg-background"
-                          value={solveData[problem.id]?.time || ''}
-                          onChange={e => setSolveData(prev => ({ ...prev, [problem.id]: { ...prev[problem.id], time: e.target.value } }))}
-                        />
-                      </div>
-                      <Button size="sm" onClick={() => solveProblem(problem.id)} disabled={solvingId === problem.id}>
-                        {solvingId === problem.id ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Solve'}
-                      </Button>
-                    </div>
-                  ) : (
-                    <Button size="sm" variant="ghost" onClick={() => unsolveProblem(problem.id)} title="Mark unsolved">
-                      <RotateCcw className="h-4 w-4" />
-                    </Button>
-                  )}
+                  {problem.isSolved && <Button size="sm" variant="ghost" onClick={() => unsolveProblem(problem.id)} title="Mark unsolved">
+                    <RotateCcw className="h-4 w-4" />
+                  </Button>}
                   <Button size="sm" variant="ghost" className="text-destructive" onClick={() => deleteProblem(problem.id)}>
                     <Trash2 className="h-4 w-4" />
                   </Button>
                 </div>
               </div>
+              <CodingAttempts problemId={problem.id} solved={problem.isSolved} attemptCount={problem.attemptCount} onSaved={loadData} />
             </div>
           ))
         )}

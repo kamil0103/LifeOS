@@ -1,3 +1,6 @@
+using LifeOS.Infrastructure.Planning;
+using Microsoft.AspNetCore.DataProtection;
+using LifeOS.Infrastructure.Calendar;
 using System.Text;
 using LifeOS.Api.Middleware;
 using LifeOS.Application.Interfaces;
@@ -58,7 +61,35 @@ builder.Services.AddSwaggerGen(c =>
 });
 
 builder.Services.AddHttpContextAccessor();
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddScoped<IHabitService, LifeOS.Infrastructure.Habits.HabitService>();
 builder.Services.AddHttpClient();
+builder.Services.AddHttpClient("PortfolioGitHub", client => client.Timeout = TimeSpan.FromSeconds(15));
+builder.Services.AddScoped<IGitHubRepositoryClient, LifeOS.Infrastructure.Professional.GitHubRepositoryClient>();
+builder.Services.AddScoped<ISkillEvidenceService, LifeOS.Infrastructure.Professional.SkillEvidenceService>();
+builder.Services.AddScoped<IProfessionalRecordService, LifeOS.Infrastructure.Professional.ProfessionalRecordService>();
+builder.Services.AddHttpClient("GoogleCalendar", client => client.Timeout = TimeSpan.FromSeconds(45));
+builder.Services.AddScoped<Func<IAiProvider>>(sp=>()=>sp.GetRequiredService<IAiProvider>());
+builder.Services.AddScoped<IPersonalRecordService, LifeOS.Infrastructure.Personal.PersonalRecordService>();
+builder.Services.AddScoped<IBibleReaderService, LifeOS.Infrastructure.Personal.BibleReaderService>();
+builder.Services.AddScoped<IAnalyticsService, LifeOS.Infrastructure.Personal.AnalyticsService>();
+builder.Services.AddScoped<ITranscriptImportService, LifeOS.Infrastructure.Education.TranscriptImportService>();
+builder.Services.AddScoped<IEducationRecordService, LifeOS.Infrastructure.Education.EducationRecordService>();
+builder.Services.AddScoped<ICodingProgressService, LifeOS.Infrastructure.Coding.CodingProgressService>();
+builder.Services.AddScoped<IAiCoachService, LifeOS.Infrastructure.Coach.AiCoachService>();
+builder.Services.AddScoped<IApplicationInterviewService, LifeOS.Infrastructure.Career.ApplicationInterviewService>();
+builder.Services.AddScoped<IResumeDraftService, LifeOS.Infrastructure.Resumes.ResumeDraftService>();
+builder.Services.AddScoped<ICompanyResearchService, LifeOS.Infrastructure.Career.CompanyResearchService>();
+builder.Services.AddScoped<ICareerWorkflowService, LifeOS.Infrastructure.Career.CareerWorkflowService>();
+builder.Services.AddScoped<ICalendarService, CalendarService>();
+builder.Services.AddScoped<IPlanningService, PlanningService>();
+builder.Services.AddScoped<IReminderService, ReminderService>();
+if (!builder.Environment.IsEnvironment("Testing")) builder.Services.AddHostedService<ReminderWorker>();
+builder.Services.AddScoped<IGoogleCalendarService, GoogleCalendarService>();
+var integrationKeys = builder.Configuration["GoogleCalendar:KeyPath"] ?? "/app/data/integrations/keys";
+builder.Services.AddDataProtection().SetApplicationName("LifeOS").PersistKeysToFileSystem(new DirectoryInfo(integrationKeys));
+if (!builder.Environment.IsEnvironment("Testing")) builder.Services.AddHostedService<GoogleCalendarSyncWorker>();
+builder.Services.AddScoped<ILocalDayService, LocalDayService>();
 
 // Database
 builder.Services.AddDbContext<AppDbContext>(options =>
@@ -145,6 +176,7 @@ app.MapControllers();
 app.MapGet("/health", () => Results.Ok(new { status = "healthy" }));
 
 // Auto-migrate on startup (self-hosted convenience)
+if (!app.Environment.IsEnvironment("Testing"))
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -156,3 +188,5 @@ using (var scope = app.Services.CreateScope())
 }
 
 app.Run();
+
+public partial class Program { }

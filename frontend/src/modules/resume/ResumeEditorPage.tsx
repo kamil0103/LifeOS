@@ -1,3 +1,10 @@
+import { useResumeAutosave } from './useResumeAutosave'
+import { ResumeComparison } from './ResumeComparison'
+import ResumePdfPreview from './ResumePdfPreview'
+import { Modal } from '@/components/ui/modal'
+import { notify } from '@/lib/notify'
+import { useAuthStore } from '@/hooks/useAuthStore'
+import { useUnsavedChanges } from '@/hooks/useUnsavedChanges'
 import { useState, useEffect } from 'react'
 import api from '@/lib/api'
 import { Button } from '@/components/ui/button'
@@ -87,6 +94,11 @@ const ALL_SECTIONS = ['summary', 'experience', 'education', 'skills', 'projects'
 
 export default function ResumeEditorPage() {
   const [resumeData, setResumeData] = useState<ResumeData | null>(null)
+  const autosave = useResumeAutosave(resumeData)
+  const [loadError, setLoadError] = useState('')
+  const [compareBaseId, setCompareBaseId] = useState('')
+  const [comparison, setComparison] = useState<{ title: string; data: ResumeData; before: ResumeData; beforeLabel: string } | null>(null)
+  const [aiReview, setAiReview] = useState<{ before: ResumeData; after: ResumeData; changes: string[]; recommendations: ResumeRecommendation[] } | null>(null)
   const [versions, setVersions] = useState<ResumeVersion[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [isGenerating, setIsGenerating] = useState(false)
@@ -101,6 +113,15 @@ export default function ResumeEditorPage() {
   const [showTailorModal, setShowTailorModal] = useState(false)
   const [changeSummary, setChangeSummary] = useState<string[]>([])
   const [recommendations, setRecommendations] = useState<ResumeRecommendation[]>([])
+
+  const [savedSnapshot, setSavedSnapshot] = useState('')
+  const userId = useAuthStore(state => state.user?.id)
+  const draftKey = 'lifeos-resume-draft-' + userId
+  const dirty = !!resumeData && !!savedSnapshot && JSON.stringify(resumeData) !== savedSnapshot
+  useUnsavedChanges(dirty)
+  useEffect(() => {
+    if (dirty && resumeData) sessionStorage.setItem(draftKey, JSON.stringify(resumeData))
+  }, [dirty, resumeData, draftKey])
 
   useEffect(() => {
     loadData()
@@ -120,12 +141,12 @@ export default function ResumeEditorPage() {
     if (!selectedJobId) return
     setIsCheckingAts(true)
     try {
-      const { data } = await api.post('/ats/check', { jobId: selectedJobId })
+      const { data } = await api.post('/ats/check', { jobId: selectedJobId, resumeData: JSON.stringify(resumeData) })
       setAtsResult(data)
       setShowAtsModal(true)
     } catch (err) {
       console.error(err)
-      alert('ATS check failed')
+      notify('ATS check failed')
     } finally {
       setIsCheckingAts(false)
     }
@@ -143,28 +164,13 @@ export default function ResumeEditorPage() {
       })
 
       const tailored = data.tailoredResume
-      setChangeSummary(data.changeSummary || [])
-      setRecommendations(data.recommendations || [])
-
-      if (mode === 'modify') {
-        setResumeData({ ...tailored, pendingRecommendations: data.recommendations || [] })
-      } else {
-        // Save as a new version
-        const job = savedJobs.find(j => j.id === selectedJobId)
-        const newTitle = job ? `${job.title} at ${job.company}` : 'Tailored Resume'
-        tailored.title = newTitle
-        await api.post('/resume-versions', {
-          title: newTitle,
-          template: tailored.template || 'harvard',
-          data: tailored,
-        })
-        setResumeData({ ...tailored, pendingRecommendations: data.recommendations || [] })
-        const { data: versions } = await api.get('/resume-versions')
-        setVersions(versions)
-      }
+      if (!tailored?.profile || !Array.isArray(tailored.experience) || !Array.isArray(tailored.education) || !Array.isArray(tailored.skills) || !Array.isArray(tailored.projects) || !Array.isArray(tailored.certifications)) throw new Error('The AI returned incomplete resume data. Try again.')
+      const job = savedJobs.find(j => j.id === selectedJobId)
+      const proposed = { ...tailored, title: mode === 'create' ? (job ? `${job.title} at ${job.company}` : 'Tailored Resume') : tailored.title, pendingRecommendations: data.recommendations || [] }
+      setAiReview({ before: resumeData, after: proposed, changes: data.changeSummary || [], recommendations: data.recommendations || [] })
     } catch (err: any) {
       console.error(err)
-      alert(err?.response?.data?.detail || 'Resume tailoring failed')
+      notify(err?.response?.data?.detail || 'Resume tailoring failed')
     } finally {
       setIsTailoring(false)
     }
@@ -189,43 +195,45 @@ export default function ResumeEditorPage() {
     }
     // notes/keywords: approving simply acknowledges (removes from list)
 
+    setResumeData(current => current ? { ...current, pendingRecommendations: recommendations.filter((_, i) => i !== index) } : current)
     setRecommendations(recommendations.filter((_, i) => i !== index))
   }
 
   const dismissRecommendation = (index: number) => {
+    setResumeData(current => current ? { ...current, pendingRecommendations: recommendations.filter((_, i) => i !== index) } : current)
     setRecommendations(recommendations.filter((_, i) => i !== index))
   }
 
   const loadData = async () => {
-    setIsLoading(true)
+    setIsLoading(true); setLoadError('')
     try {
-      const { data } = await api.get('/resume-versions')
-      setVersions(data)
-      // Always fetch latest live resume data by default so transcript/job/skill additions reflect immediately
-      const fresh = await api.get('/documents/resume-data')
-      setResumeData(fresh.data)
-    } catch (err: any) {
-      try {
-        const fresh = await api.get('/documents/resume-data')
-        setResumeData(fresh.data)
-      } catch (e) {
-        console.error(e)
+      const versionsResult = await api.get('/resume-versions')
+      setVersions(versionsResult.data)
+      let server: { revision: string; data: ResumeData } | null = null
+      try { server = (await api.get('/resume-draft')).data } catch (e: any) { if (e.response?.status !== 404) throw e }
+      const value = server?.data || (await api.get('/documents/resume-data')).data
+      autosave.initialize(value, server?.revision || null)
+      setResumeData(value); setRecommendations(value.pendingRecommendations || []); setSavedSnapshot(JSON.stringify(value))
+      const draft = sessionStorage.getItem(draftKey)
+      if (draft && draft !== JSON.stringify(value) && window.confirm('Restore this tab’s unsaved resume edits instead of the server draft?')) {
+        try { const recovered = JSON.parse(draft); setResumeData(recovered); setRecommendations(recovered.pendingRecommendations || []) } catch { sessionStorage.removeItem(draftKey) }
       }
-      console.error(err)
-    } finally {
-      setIsLoading(false)
-    }
+    } catch { setLoadError('Could not load resume records. Your local edits are retained. Try again.') }
+    finally { setIsLoading(false) }
   }
 
   const syncLiveData = async () => {
+    if (dirty && !window.confirm('Replace the current draft with your latest profile records?')) return
     setIsLoading(true)
     try {
       const fresh = await api.get('/documents/resume-data')
       setResumeData(fresh.data)
-      alert('Resynced with latest live transcript, experience, and skills data!')
+      setRecommendations(fresh.data.pendingRecommendations || [])
+      setSavedSnapshot(JSON.stringify(fresh.data))
+      notify('Resynced with latest live transcript, experience, and skills data!')
     } catch (err) {
       console.error(err)
-      alert('Failed to sync live data')
+      notify('Failed to sync live data')
     } finally {
       setIsLoading(false)
     }
@@ -251,7 +259,7 @@ export default function ResumeEditorPage() {
     } catch (err: any) {
       console.error(err)
       const detail = err?.response?.data?.detail || err?.response?.data?.title || err?.message || 'Unknown error'
-      alert(`Failed to generate resume: ${detail}`)
+      notify(`Failed to generate resume: ${detail}`)
     } finally {
       setIsGenerating(false)
     }
@@ -268,20 +276,25 @@ export default function ResumeEditorPage() {
       })
       const { data } = await api.get('/resume-versions')
       setVersions(data)
-      alert('Resume version saved!')
+      setSavedSnapshot(JSON.stringify(resumeData))
+      notify('Resume version saved!')
     } catch (err) {
       console.error(err)
-      alert('Failed to save version')
+      notify('Failed to save version')
     } finally {
       setIsSaving(false)
     }
   }
 
   const loadVersion = async (id: string) => {
+    if (dirty && !window.confirm('Replace your unsaved draft with this version?')) return
     try {
       const { data } = await api.get(`/resume-versions/${id}`)
       if (data.data) {
         setResumeData(data.data)
+        setRecommendations(data.data.pendingRecommendations || [])
+        setSavedSnapshot(JSON.stringify(data.data))
+        sessionStorage.removeItem(draftKey)
         setActiveTab('edit')
       }
     } catch (err) {
@@ -333,16 +346,19 @@ export default function ResumeEditorPage() {
     return (
       <div className="p-8">
         <h1 className="text-2xl font-bold mb-4">Resume Editor</h1>
-        <p className="text-muted-foreground">Could not load resume data. Make sure your profile is complete.</p>
+        <p role="alert">{loadError || 'Could not load resume data.'} <Button onClick={loadData}>Retry loading</Button></p>
       </div>
     )
   }
 
   return (
     <div className="p-8 max-w-5xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
+      {loadError && <p role="alert">{loadError}</p>}
+      <div className="mb-4 text-sm space-y-2"><p role="status">{autosave.status}. Save creates a separate named version.</p>{autosave.error && <p role="alert" className="text-destructive">{autosave.error} {!autosave.conflict && <button className="underline" onClick={autosave.retry}>Retry autosave</button>}</p>}{autosave.conflict && <Button variant="outline" onClick={() => { if (window.confirm('Reload the server draft and replace local edits? Save a version first if you want to retain them.')) { sessionStorage.removeItem(draftKey); loadData() } }}>Reload server draft</Button>}</div>
+      <div className="flex flex-wrap gap-3 items-center justify-between mb-6">
         <h1 className="text-2xl font-bold">Resume Editor</h1>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          <ResumePdfPreview data={resumeData} />
           <Button variant="outline" onClick={syncLiveData}>
             Sync Live Data
           </Button>
@@ -435,7 +451,7 @@ export default function ResumeEditorPage() {
                 Recommendations
               </h2>
               <p className="text-sm text-muted-foreground mb-4">
-                The job wants things not currently in your data. Approve to apply, or dismiss.
+                These suggestions are not in your recorded data. Verify each one and approve only skills you actually have, or dismiss it.
               </p>
               <div className="space-y-2">
                 {recommendations.map((rec, i) => (
@@ -581,6 +597,7 @@ export default function ResumeEditorPage() {
         </div>
       ) : (
         <div className="space-y-4">
+          <label className="block text-sm">Compare against<select aria-label="Comparison baseline" className="border rounded p-2 bg-background ml-2" value={compareBaseId} onChange={e => setCompareBaseId(e.target.value)}><option value="">Current draft</option>{versions.map(v => <option key={v.id} value={v.id}>{v.title} · {new Date(v.createdAt).toLocaleString()}</option>)}</select></label>
           {versions.length === 0 ? (
             <p className="text-muted-foreground">No saved versions yet.</p>
           ) : (
@@ -591,6 +608,7 @@ export default function ResumeEditorPage() {
                   <p className="text-sm text-muted-foreground">{v.template} — {new Date(v.createdAt).toLocaleDateString()}</p>
                 </div>
                 <div className="flex gap-2">
+                  <Button size="sm" variant="outline" onClick={async () => { try { const [{ data }, base] = await Promise.all([api.get(`/resume-versions/${v.id}`), compareBaseId ? api.get(`/resume-versions/${compareBaseId}`) : Promise.resolve({ data: { data: resumeData } })]); if (!data.data || !base.data.data) throw new Error(); setComparison({ title: v.title, data: data.data, before: base.data.data, beforeLabel: compareBaseId ? versions.find(item => item.id === compareBaseId)?.title || 'Saved version' : 'Current draft' }) } catch { notify('Could not load this version for comparison.', 'error') } }}>Compare with draft</Button>
                   <Button size="sm" variant="outline" onClick={() => loadVersion(v.id)}>
                     <FileText className="mr-2 h-4 w-4" />
                     Load
@@ -605,22 +623,24 @@ export default function ResumeEditorPage() {
         </div>
       )}
 
+      <Modal open={!!comparison} onClose={() => setComparison(null)} title={comparison ? 'Compare: ' + comparison.title : 'Compare version'}>{comparison && <ResumeComparison before={comparison.before as unknown as Record<string, unknown>} beforeLabel={comparison.beforeLabel} after={comparison.data as unknown as Record<string, unknown>} />}</Modal>
+      <Modal open={!!aiReview} onClose={() => setAiReview(null)} title="Review AI resume changes">{aiReview && <div className="space-y-4"><p className="text-sm">Review the complete proposed changes before applying. Verify facts and removals; AI can make mistakes. Applying updates the autosaved draft. Save creates a named version.</p><ul className="list-disc pl-4 text-sm">{aiReview.changes.map((text, i) => <li key={i}>{text}</li>)}</ul><ResumeComparison before={aiReview.before as unknown as Record<string, unknown>} after={aiReview.after as unknown as Record<string, unknown>} afterLabel="AI proposal" /><Button disabled={JSON.stringify(resumeData) !== JSON.stringify(aiReview.before)} onClick={() => { setResumeData(aiReview.after); setRecommendations(aiReview.recommendations); setChangeSummary(aiReview.changes); setAiReview(null) }}>Apply to draft</Button>{JSON.stringify(resumeData) !== JSON.stringify(aiReview.before) && <p role="alert">The draft changed while AI was working. Close this review and generate a new proposal.</p>}<Button variant="outline" onClick={() => setAiReview(null)}>Discard AI proposal</Button></div>}</Modal>
       {/* Tailor Mode Modal */}
       {showTailorModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowTailorModal(false)}>
-          <div className="bg-card border rounded-lg p-6 w-[440px]" onClick={e => e.stopPropagation()}>
+          <div className="bg-card border rounded-lg p-6 w-full max-w-[440px] mx-4" onClick={e => e.stopPropagation()}>
             <h2 className="text-xl font-semibold mb-2">Tailor Resume with AI</h2>
             <p className="text-sm text-muted-foreground mb-5">
-              AI will rewrite your experience and education to best fit this job using only your real data. Nothing is fabricated.
+              AI will suggest changes for this job. Review the full comparison and verify the facts before applying.
             </p>
             <div className="space-y-3">
               <Button className="w-full" onClick={() => tailorResume('modify')} disabled={isTailoring}>
                 {isTailoring ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
-                Update Current Editor
+                Review changes to current draft
               </Button>
               <Button variant="outline" className="w-full" onClick={() => tailorResume('create')} disabled={isTailoring}>
                 {isTailoring ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                Save as New Version
+                Review a separately titled draft
               </Button>
               <Button variant="ghost" className="w-full" onClick={() => setShowTailorModal(false)}>Cancel</Button>
             </div>
@@ -631,7 +651,7 @@ export default function ResumeEditorPage() {
       {/* ATS Check Modal */}
       {showAtsModal && atsResult && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setShowAtsModal(false)}>
-          <div className="bg-card border rounded-lg p-6 w-[600px] max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+          <div className="bg-card border rounded-lg p-6 w-full max-w-[600px] mx-4 max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <h2 className="text-xl font-semibold mb-4">ATS Check Results</h2>
             <div className="text-center mb-4">
               <p className="text-4xl font-bold text-primary">{atsResult.score}%</p>

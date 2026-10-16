@@ -54,6 +54,7 @@ public class AuthController : ControllerBase
     }
 
     [HttpGet("me")]
+    [HttpGet("/api/lifeos/session")]
     [Authorize]
     public async Task<ActionResult<AuthResponse>> Me(CancellationToken ct)
     {

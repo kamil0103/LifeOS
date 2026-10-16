@@ -9,14 +9,19 @@ namespace LifeOS.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Route("api/job-applications")]
 [Authorize]
 public class ApplicationsController : ControllerBase
 {
     private readonly AppDbContext _context;
+    private readonly LifeOS.Application.Interfaces.ICareerWorkflowService _career;
 
-    public ApplicationsController(AppDbContext context)
+    private readonly LifeOS.Application.Interfaces.IApplicationInterviewService _interviews;
+    public ApplicationsController(AppDbContext context, LifeOS.Application.Interfaces.ICareerWorkflowService career, LifeOS.Application.Interfaces.IApplicationInterviewService interviews)
     {
         _context = context;
+        _career = career;
+        _interviews = interviews;
     }
 
     private Guid GetUserId()
@@ -35,6 +40,7 @@ public class ApplicationsController : ControllerBase
             .Where(a => a.UserId == userId)
             .Include(a => a.Job)
             .Include(a => a.ResumeVersion)
+            .Include(a => a.CoverLetterDocument)
             .Include(a => a.StatusHistory)
             .OrderByDescending(a => a.CreatedAt)
             .ToListAsync(ct);
@@ -50,6 +56,7 @@ public class ApplicationsController : ControllerBase
             .AsNoTracking()
             .Include(a => a.Job)
             .Include(a => a.ResumeVersion)
+            .Include(a => a.CoverLetterDocument)
             .Include(a => a.StatusHistory)
             .FirstOrDefaultAsync(a => a.Id == id && a.UserId == userId, ct);
 
@@ -60,39 +67,7 @@ public class ApplicationsController : ControllerBase
     [HttpPost]
     public async Task<ActionResult<JobApplicationDto>> CreateApplication(CreateApplicationRequest request, CancellationToken ct)
     {
-        var userId = GetUserId();
-        
-        // Verify job exists and belongs to user
-        var job = await _context.Jobs
-            .FirstOrDefaultAsync(j => j.Id == request.JobId && j.UserId == userId, ct);
-        
-        if (job == null) return BadRequest("Job not found");
-
-        var application = new JobApplication
-        {
-            UserId = userId,
-            JobId = request.JobId,
-            ResumeVersionId = request.ResumeVersionId,
-            Status = "applied",
-            AppliedDate = request.AppliedDate ?? DateTime.UtcNow,
-            Notes = request.Notes
-        };
-
-        // Update job status
-        job.Status = "applied";
-
-        // Add status history
-        application.StatusHistory.Add(new ApplicationStatusHistory
-        {
-            Status = "applied",
-            ChangedAt = DateTimeOffset.UtcNow,
-            Notes = "Application created"
-        });
-
-        _context.JobApplications.Add(application);
-        await _context.SaveChangesAsync(ct);
-
-        return Ok(MapApplication(application));
+        return Ok(await _career.TrackApplicationAsync(GetUserId(),request,ct));
     }
 
     [HttpPut("{id:guid}/status")]
@@ -106,19 +81,23 @@ public class ApplicationsController : ControllerBase
 
         if (application == null) return NotFound();
 
+        if(!new[]{"applied","phone_screen","interview","offer","rejected","withdrawn"}.Contains(request.Status)) return BadRequest("Unknown application status");
         var oldStatus = application.Status;
         application.Status = request.Status;
 
         // Update job status too
         application.Job.Status = request.Status;
 
-        // Add history entry
-        application.StatusHistory.Add(new ApplicationStatusHistory
+        // Explicitly insert the history row; its UUID is assigned before EF tracks it.
+        var history = new ApplicationStatusHistory
         {
+            ApplicationId = application.Id,
             Status = request.Status,
             ChangedAt = DateTimeOffset.UtcNow,
             Notes = request.Notes ?? $"Status changed from {oldStatus} to {request.Status}"
-        });
+        };
+        application.StatusHistory.Add(history);
+        _context.ApplicationStatusHistories.Add(history);
 
         await _context.SaveChangesAsync(ct);
         return Ok(MapApplication(application));
@@ -144,30 +123,24 @@ public class ApplicationsController : ControllerBase
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> DeleteApplication(Guid id, CancellationToken ct)
     {
-        var userId = GetUserId();
-        var application = await _context.JobApplications
-            .FirstOrDefaultAsync(a => a.Id == id && a.UserId == userId, ct);
-
-        if (application == null) return NotFound();
-
-        _context.JobApplications.Remove(application);
-        await _context.SaveChangesAsync(ct);
-        return NoContent();
+        return await _interviews.DeleteApplicationAsync(GetUserId(), id, ct) ? NoContent() : NotFound();
     }
 
     private static JobApplicationDto MapApplication(JobApplication a) => new()
     {
         Id = a.Id,
         JobId = a.JobId,
-        JobTitle = a.Job.Title,
-        Company = a.Job.Company,
+        JobTitle = a.Job?.Title ?? "",
+        Company = a.Job?.Company ?? "",
+        RecruiterName=a.RecruiterName, RecruiterEmail=a.RecruiterEmail, RecruiterPhone=a.RecruiterPhone,
+        CoverLetterDocumentId=a.CoverLetterDocumentId, CoverLetterDocumentTitle=a.CoverLetterDocument?.Filename,
         Status = a.Status,
         AppliedDate = a.AppliedDate,
         FollowUpDate = a.FollowUpDate,
         Notes = a.Notes,
         ResumeVersionId = a.ResumeVersionId,
         ResumeVersionTitle = a.ResumeVersion?.Title,
-        StatusHistory = a.StatusHistory.Select(h => new ApplicationStatusHistoryDto
+        StatusHistory = a.StatusHistory.OrderByDescending(h=>h.ChangedAt).Select(h => new ApplicationStatusHistoryDto
         {
             Status = h.Status,
             ChangedAt = h.ChangedAt,

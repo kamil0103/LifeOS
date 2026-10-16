@@ -14,12 +14,13 @@ async function main() {
   }
   const source = fs.readFileSync('frontend/src/lib/api.ts', 'utf8')
     .replace("import axios from 'axios'", '')
+    .replace("import { notify } from './notify'", '')
     .replace('import.meta.env.VITE_API_BASE_URL', "''")
     .replace('let refreshInFlight: Promise<string> | null', 'let refreshInFlight')
     .replace(' as string', '')
     .replace('export default api', '')
   vm.runInNewContext(source, {
-    axios, FormData: class {}, window: { location: {} },
+    axios, notify() {}, FormData: class {}, window: { location: {} },
     localStorage: { getItem: k => values.get(k), setItem: (k, v) => values.set(k, v), removeItem: k => values.delete(k) },
   })
   const error = () => ({ response: { status: 401 }, config: { headers: { Authorization: 'Bearer expired' } } })

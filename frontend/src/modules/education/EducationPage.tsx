@@ -1,7 +1,9 @@
+import { notify } from '@/lib/notify'
 import { useState, useEffect, useCallback } from 'react'
 import api from '@/lib/api'
+import TranscriptReview from './TranscriptReview'
 import { Button } from '@/components/ui/button'
-import { Loader2, Plus, Trash2, Upload, Sparkles, FileText, X, Save, Pencil } from 'lucide-react'
+import { Loader2, Plus, Trash2, Upload, Sparkles, FileText, X, Pencil } from 'lucide-react'
 
 interface Course {
   id: string
@@ -12,6 +14,7 @@ interface Course {
   grade?: string
   credits?: number
   term?: string
+  description?: string
   isMajorRelated: boolean
 }
 
@@ -50,7 +53,13 @@ export default function EducationPage() {
   const [showTranscriptModal, setShowTranscriptModal] = useState(false)
   const [isDragging, setIsDragging] = useState(false)
   const [uploadProgress, setUploadProgress] = useState<string | null>(null)
+  const [loadError, setLoadError] = useState('')
+  const [savingTranscript, setSavingTranscript] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+
+  const [search, setSearch] = useState('')
+  const [recordError, setRecordError] = useState('')
+  const [savingRecord, setSavingRecord] = useState(false)
 
   // Edit modal state
   const [editInst, setEditInst] = useState<Institution | null>(null)
@@ -63,9 +72,10 @@ export default function EducationPage() {
 
   const loadInstitutions = () => {
     setIsLoading(true)
+    setLoadError('')
     api.get('/education/institutions')
       .then(({ data }) => setInstitutions(data))
-      .catch(console.error)
+      .catch(() => setLoadError('Could not load education records. Try again.'))
       .finally(() => setIsLoading(false))
   }
 
@@ -78,7 +88,7 @@ export default function EducationPage() {
       loadInstitutions()
     } catch (err: any) {
       console.error(err)
-      alert(err.response?.data?.detail || 'Failed to save institution')
+      notify(err.response?.data?.detail || 'Failed to save institution')
     }
   }
 
@@ -104,14 +114,15 @@ export default function EducationPage() {
       loadInstitutions()
     } catch (err) {
       console.error(err)
-      alert('Failed to update institution')
+      notify('Failed to update institution')
     }
   }
 
   const saveDegree = async () => {
-    if (!editDegree || !editDegree.degreeName) return
+    if (!editDegree || !editDegree.degreeName.trim() || savingRecord) return
+    setRecordError(''); setSavingRecord(true)
     try {
-      await api.put(`/education/degrees/${editDegree.id}`, {
+      await api.request({ method: editDegree.id ? 'put' : 'post', url: editDegree.id ? `/education/degrees/${editDegree.id}` : '/education/degrees', data: {
         institutionId: editDegree.institutionId,
         degreeName: editDegree.degreeName,
         degreeType: editDegree.degreeType,
@@ -121,17 +132,17 @@ export default function EducationPage() {
         gpa: editDegree.gpa,
         honors: editDegree.honors,
         isCurrent: editDegree.isCurrent,
-      })
+      } })
       setEditDegree(null)
       loadInstitutions()
-    } catch (err) {
-      console.error(err)
-      alert('Failed to update degree')
-    }
+    } catch (err: any) {
+      setRecordError(err.response?.data?.detail || 'Could not save degree. Try again.')
+    } finally { setSavingRecord(false) }
   }
 
   const saveCourse = async () => {
-    if (!editCourse || !editCourse.name) return
+    if (!editCourse || !editCourse.name.trim() || savingRecord) return
+    setRecordError(''); setSavingRecord(true)
     try {
       // If a degree is chosen, align institution to that degree's institution
       let institutionId = editCourse.institutionId ?? null
@@ -139,7 +150,7 @@ export default function EducationPage() {
         const parentDegree = institutions.flatMap(i => i.degrees).find(d => d.id === editCourse.degreeId)
         if (parentDegree?.institutionId) institutionId = parentDegree.institutionId
       }
-      await api.put(`/education/courses/${editCourse.id}`, {
+      await api.request({ method: editCourse.id ? 'put' : 'post', url: editCourse.id ? `/education/courses/${editCourse.id}` : '/education/courses', data: {
         degreeId: editCourse.degreeId ?? null,
         institutionId,
         code: editCourse.code,
@@ -148,13 +159,13 @@ export default function EducationPage() {
         credits: editCourse.credits,
         term: editCourse.term,
         isMajorRelated: editCourse.isMajorRelated,
-      })
+        description: editCourse.description,
+      } })
       setEditCourse(null)
       loadInstitutions()
-    } catch (err) {
-      console.error(err)
-      alert('Failed to update course')
-    }
+    } catch (err: any) {
+      setRecordError(err.response?.data?.detail || 'Could not save course. Try again.')
+    } finally { setSavingRecord(false) }
   }
 
   const deleteCourse = async (id: string) => {
@@ -179,7 +190,7 @@ export default function EducationPage() {
 
   const extractTranscript = async () => {
     if (!transcriptText.trim() || transcriptText.length < 50) {
-      alert('Please paste at least 50 characters of transcript text')
+      notify('Please paste at least 50 characters of transcript text')
       return
     }
     setIsExtracting(true)
@@ -242,12 +253,13 @@ export default function EducationPage() {
     }
   }
 
-  const saveExtracted = async () => {
-    if (!extractedData) return
+  const saveExtracted = async (reviewed: any) => {
+    if (!extractedData || savingTranscript) return
+    setSavingTranscript(true)
     setSaveError(null)
     try {
-      await api.post('/transcripts/save', extractedData)
-      alert('Education data saved!')
+      const { data } = await api.post('/transcripts/save', reviewed)
+      notify(`Added ${data.coursesAdded}, updated ${data.coursesUpdated || 0} courses; ${(extractedData.courses?.length || 0) - reviewed.courses.length + data.coursesSkipped} courses skipped or excluded.`)
       setShowTranscriptModal(false)
       setTranscriptText('')
       setExtractedData(null)
@@ -255,8 +267,18 @@ export default function EducationPage() {
     } catch (err: any) {
       console.error(err)
       setSaveError(err.response?.data?.detail || 'Save failed. Please check the data and try again.')
+    } finally {
+      setSavingTranscript(false)
     }
   }
+
+  const query = search.trim().toLocaleLowerCase()
+  const matches = (...values: (string | number | undefined)[]) => values.some(value => String(value ?? '').toLocaleLowerCase().includes(query))
+  const courseMatches = (course: Course) => matches(course.name, course.code, course.term, course.grade, course.credits)
+  const visibleInstitutions = institutions.map(inst => {
+    const schoolMatches = matches(inst.name, inst.location)
+    return { ...inst, degrees: inst.degrees.map(degree => ({ ...degree, courses: schoolMatches || matches(degree.degreeName, degree.field) ? degree.courses : degree.courses.filter(courseMatches) })).filter(degree => schoolMatches || matches(degree.degreeName, degree.field) || degree.courses.length > 0), unassignedCourses: schoolMatches ? inst.unassignedCourses : inst.unassignedCourses.filter(courseMatches) }
+  }).filter(inst => matches(inst.name, inst.location) || inst.degrees.length > 0 || inst.unassignedCourses.length > 0)
 
   if (isLoading) {
     return (
@@ -268,6 +290,7 @@ export default function EducationPage() {
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
+      {loadError && <div role="alert" className="border border-red-500 rounded p-3 text-sm">{loadError} <button className="underline" onClick={loadInstitutions}>Retry</button></div>}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="page-header">Education</h1>
@@ -315,7 +338,7 @@ export default function EducationPage() {
           <textarea
             className="w-full px-4 py-3 rounded-lg border border-white/10 bg-white/5 text-white text-sm placeholder:text-white/20 focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500/30 transition-all"
             rows={4}
-            placeholder="Paste transcript text here..."
+            aria-label="Paste transcript text here..." placeholder="Paste transcript text here..."
             value={transcriptText}
             onChange={e => setTranscriptText(e.target.value)}
           />
@@ -354,7 +377,7 @@ export default function EducationPage() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <input
               type="text"
-              placeholder="Institution Name"
+              aria-label="Institution Name" placeholder="Institution Name"
               value={newInst.name}
               onChange={(e) => setNewInst({ ...newInst, name: e.target.value })}
               className="px-4 py-2.5 rounded-lg border border-white/10 bg-white/5 text-white text-sm placeholder:text-white/20 focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500/30 transition-all"
@@ -372,7 +395,7 @@ export default function EducationPage() {
             </select>
             <input
               type="text"
-              placeholder="Location"
+              aria-label="Location" placeholder="Location"
               value={newInst.location}
               onChange={(e) => setNewInst({ ...newInst, location: e.target.value })}
               className="px-4 py-2.5 rounded-lg border border-white/10 bg-white/5 text-white text-sm placeholder:text-white/20 focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500/30 transition-all"
@@ -385,6 +408,10 @@ export default function EducationPage() {
         </div>
       )}
 
+      <label className="block text-sm text-white/60">Search education
+        <input aria-label="Search education" value={search} onChange={e => setSearch(e.target.value)} placeholder="School, degree, course, code, term or grade" className="mt-2 w-full px-4 py-2.5 rounded-lg border border-white/10 bg-white/5 text-white" />
+      </label>
+      {query && visibleInstitutions.length === 0 && <p role="status" className="text-white/60">No matching education records.</p>}
       {/* Institutions List */}
       <div className="space-y-4">
         {institutions.length === 0 && (
@@ -394,7 +421,7 @@ export default function EducationPage() {
           </div>
         )}
 
-        {institutions.map((inst) => (
+        {visibleInstitutions.map((inst) => (
           <div key={inst.id} className="glass-card p-6">
             <div className="flex items-start justify-between mb-4">
               <div>
@@ -403,7 +430,9 @@ export default function EducationPage() {
                   {inst.institutionType} {inst.location && `· ${inst.location}`}
                 </p>
               </div>
-              <div className="flex gap-1">
+              <div className="flex flex-wrap gap-1">
+                <Button variant="ghost" size="sm" onClick={() => { setRecordError(''); setEditDegree({ id: '', institutionId: inst.id, degreeName: '', degreeType: 'bachelors', isCurrent: false, courses: [] }) }}>Add Degree</Button>
+                <Button variant="ghost" size="sm" onClick={() => { setRecordError(''); setEditCourse({ id: '', institutionId: inst.id, name: '', isMajorRelated: true }) }}>Add Course</Button>
                 <Button variant="ghost" size="sm" onClick={() => setEditInst(inst)} className="text-white/40 hover:text-white hover:bg-white/5">
                   <Pencil className="h-4 w-4" />
                 </Button>
@@ -422,10 +451,10 @@ export default function EducationPage() {
                       <p className="font-medium text-white">{deg.degreeName}</p>
                       <div className="flex items-center gap-1">
                         <span className="text-xs bg-white/5 px-2 py-1 rounded text-white/60">{deg.degreeType}</span>
-                        <button onClick={() => setEditDegree(deg)} className="text-white/30 hover:text-white p-1">
+                        <button aria-label={`Edit ${deg.degreeName}`} onClick={() => { setRecordError(''); setEditDegree(deg) }} className="text-white/30 hover:text-white p-1">
                           <Pencil className="h-3 w-3" />
                         </button>
-                        <button onClick={() => deleteDegree(deg.id)} className="text-red-400/60 hover:text-red-400 p-1">
+                        <button aria-label={`Delete ${deg.degreeName}`} onClick={() => deleteDegree(deg.id)} className="text-red-400/60 hover:text-red-400 p-1">
                           <Trash2 className="h-3 w-3" />
                         </button>
                       </div>
@@ -440,10 +469,10 @@ export default function EducationPage() {
                         {deg.courses.map((c) => (
                           <span key={c.id} className="text-xs bg-white/5 px-2 py-1 rounded text-white/50 inline-flex items-center gap-1 group">
                             {c.code} {c.name}
-                            <button onClick={() => setEditCourse({ ...c, degreeId: c.degreeId ?? deg.id, institutionId: c.institutionId ?? inst.id })} className="text-white/30 hover:text-white opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button aria-label={`Edit ${c.name}`} onClick={() => { setRecordError(''); setEditCourse({ ...c, degreeId: c.degreeId ?? deg.id, institutionId: c.institutionId ?? inst.id }) }} className="text-white/30 hover:text-white opacity-60 hover:opacity-100 focus:opacity-100 transition-opacity">
                               <Pencil className="h-3 w-3" />
                             </button>
-                            <button onClick={() => deleteCourse(c.id)} className="text-red-400/50 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button aria-label={`Delete ${c.name}`} onClick={() => deleteCourse(c.id)} className="text-red-400/50 hover:text-red-400 opacity-60 hover:opacity-100 focus:opacity-100 transition-opacity">
                               <X className="h-3 w-3" />
                             </button>
                           </span>
@@ -464,10 +493,10 @@ export default function EducationPage() {
                   {inst.unassignedCourses.map((c) => (
                     <span key={c.id} className="text-xs bg-white/5 px-2 py-1 rounded text-white/50 inline-flex items-center gap-1 group">
                       {c.code} {c.name}
-                      <button onClick={() => setEditCourse({ ...c, institutionId: c.institutionId ?? inst.id })} className="text-white/30 hover:text-white opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button aria-label={`Edit ${c.name}`} onClick={() => { setRecordError(''); setEditCourse({ ...c, institutionId: c.institutionId ?? inst.id }) }} className="text-white/30 hover:text-white opacity-60 hover:opacity-100 focus:opacity-100 transition-opacity">
                         <Pencil className="h-3 w-3" />
                       </button>
-                      <button onClick={() => deleteCourse(c.id)} className="text-red-400/50 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button aria-label={`Delete ${c.name}`} onClick={() => deleteCourse(c.id)} className="text-red-400/50 hover:text-red-400 opacity-60 hover:opacity-100 focus:opacity-100 transition-opacity">
                         <X className="h-3 w-3" />
                       </button>
                     </span>
@@ -479,76 +508,15 @@ export default function EducationPage() {
         ))}
       </div>
 
-      {/* Transcript Review Modal */}
-      {showTranscriptModal && extractedData && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => setShowTranscriptModal(false)}>
-          <div className="glass-card p-6 w-[600px] max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-            <h2 className="text-xl font-semibold text-white mb-4">Review Extracted Data</h2>
-            
-            {saveError && (
-              <div className="mb-4 text-sm text-red-400 bg-red-500/10 border border-red-500/20 p-3 rounded-lg">
-                {saveError}
-              </div>
-            )}
-            
-            {/* Show warning if nothing was extracted */}
-            {!extractedData.institution?.name && !extractedData.degree?.name && (!extractedData.courses || extractedData.courses.length === 0) && (
-              <div className="mb-4 text-sm text-amber-400 bg-amber-500/10 border border-amber-500/20 p-4 rounded-lg">
-                <p className="font-medium">No data could be extracted.</p>
-                <p className="mt-1 text-white/60">This can happen if:</p>
-                <ul className="list-disc pl-4 mt-1 text-white/60 space-y-1">
-                  <li>The file is a scanned/image PDF (not text-based)</li>
-                  <li>The file doesn't contain transcript data</li>
-                  <li>The text is in an unusual format</li>
-                </ul>
-                <p className="mt-2 text-white/60">Try copying the text manually and pasting it in the text box below.</p>
-              </div>
-            )}
-            
-            <div className="space-y-4">
-              <div>
-                <h3 className="text-sm font-medium text-white/40">Institution</h3>
-                <p className="font-medium text-white">{extractedData.institution?.name || 'Not detected'}</p>
-                <p className="text-sm text-white/40">{extractedData.institution?.type} {extractedData.institution?.location && `· ${extractedData.institution.location}`}</p>
-              </div>
-              <div>
-                <h3 className="text-sm font-medium text-white/40">Degree</h3>
-                <p className="font-medium text-white">{extractedData.degree?.name || 'Not detected'}</p>
-                <p className="text-sm text-white/40">{extractedData.degree?.field} {extractedData.degree?.type && `· ${extractedData.degree.type}`}</p>
-                {extractedData.degree?.gpa && <p className="text-sm text-white/40">GPA: {extractedData.degree.gpa}</p>}
-              </div>
-              <div>
-                <h3 className="text-sm font-medium text-white/40">Courses ({extractedData.courses?.length || 0})</h3>
-                <div className="space-y-1 max-h-48 overflow-y-auto">
-                  {extractedData.courses?.map((c: any, i: number) => (
-                    <div key={i} className="text-sm text-white/60 border-b border-white/5 pb-1">
-                      {c.code} {c.name} {c.grade && `· Grade: ${c.grade}`} {c.credits && `· Credits: ${c.credits}`}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-            <div className="flex gap-2 mt-6">
-              <Button 
-                onClick={saveExtracted} 
-                disabled={!extractedData.institution?.name && !extractedData.degree?.name}
-                className="bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 border-0 disabled:opacity-50"
-              >
-                <Save className="mr-2 h-4 w-4" /> Save to Education
-              </Button>
-              <Button variant="outline" onClick={() => setShowTranscriptModal(false)} className="border-white/10 hover:bg-white/5">Cancel</Button>
-            </div>
-          </div>
-        </div>
-      )}
+      {showTranscriptModal && extractedData && <TranscriptReview data={extractedData} institutions={institutions} saving={savingTranscript} error={saveError} onSave={saveExtracted} onCancel={() => setShowTranscriptModal(false)} />}
 
       {/* Edit Institution Modal */}
       {editInst && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => setEditInst(null)}>
-          <div className="glass-card p-6 w-[440px]" onClick={e => e.stopPropagation()}>
+          <div className="glass-card p-6 w-full max-w-[440px] mx-4" onClick={e => e.stopPropagation()}>
             <h3 className="text-lg font-semibold text-white mb-4">Edit Institution</h3>
             <div className="space-y-3">
-              <input type="text" placeholder="Institution Name" value={editInst.name} onChange={e => setEditInst({ ...editInst, name: e.target.value })} className="w-full px-4 py-2.5 rounded-lg border border-white/10 bg-white/5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40" />
+              <input type="text" aria-label="Institution Name" placeholder="Institution Name" value={editInst.name} onChange={e => setEditInst({ ...editInst, name: e.target.value })} className="w-full px-4 py-2.5 rounded-lg border border-white/10 bg-white/5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40" />
               <select value={editInst.institutionType} onChange={e => setEditInst({ ...editInst, institutionType: e.target.value })} className="w-full px-4 py-2.5 rounded-lg border border-white/10 bg-white/5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40">
                 <option value="university">University</option>
                 <option value="community_college">Community College</option>
@@ -556,7 +524,7 @@ export default function EducationPage() {
                 <option value="certificate_organization">Certificate Organization</option>
                 <option value="other">Other</option>
               </select>
-              <input type="text" placeholder="Location" value={editInst.location ?? ''} onChange={e => setEditInst({ ...editInst, location: e.target.value })} className="w-full px-4 py-2.5 rounded-lg border border-white/10 bg-white/5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40" />
+              <input type="text" aria-label="Location" placeholder="Location" value={editInst.location ?? ''} onChange={e => setEditInst({ ...editInst, location: e.target.value })} className="w-full px-4 py-2.5 rounded-lg border border-white/10 bg-white/5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40" />
             </div>
             <div className="flex gap-2 mt-5 justify-end">
               <Button variant="outline" onClick={() => setEditInst(null)} className="border-white/10 hover:bg-white/5">Cancel</Button>
@@ -568,37 +536,38 @@ export default function EducationPage() {
 
       {/* Edit Degree Modal */}
       {editDegree && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => setEditDegree(null)}>
-          <div className="glass-card p-6 w-[480px] max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-            <h3 className="text-lg font-semibold text-white mb-4">Edit Degree / Major</h3>
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => { if (!savingRecord) setEditDegree(null) }}>
+          <div className="glass-card p-6 w-full max-w-[480px] mx-4 max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold text-white mb-4">{editDegree.id ? 'Edit Degree / Major' : 'Add Degree'}</h3>
             <div className="space-y-3">
-              <input type="text" placeholder="Degree Name *" value={editDegree.degreeName} onChange={e => setEditDegree({ ...editDegree, degreeName: e.target.value })} className="w-full px-4 py-2.5 rounded-lg border border-white/10 bg-white/5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40" />
+              <input type="text" aria-label="Degree Name *" placeholder="Degree Name *" value={editDegree.degreeName} onChange={e => setEditDegree({ ...editDegree, degreeName: e.target.value })} className="w-full px-4 py-2.5 rounded-lg border border-white/10 bg-white/5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40" />
               <div className="grid grid-cols-2 gap-3">
-                <select value={editDegree.degreeType} onChange={e => setEditDegree({ ...editDegree, degreeType: e.target.value })} className="px-4 py-2.5 rounded-lg border border-white/10 bg-white/5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40">
+                <select aria-label="Degree type" value={editDegree.degreeType} onChange={e => setEditDegree({ ...editDegree, degreeType: e.target.value })} className="px-4 py-2.5 rounded-lg border border-white/10 bg-white/5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40">
                   <option value="bachelors">Bachelors</option>
                   <option value="masters">Masters</option>
                   <option value="associates">Associates</option>
                   <option value="certificate">Certificate</option>
                   <option value="other">Other</option>
                 </select>
-                <input type="text" placeholder="Field (e.g. Computer Science)" value={editDegree.field ?? ''} onChange={e => setEditDegree({ ...editDegree, field: e.target.value })} className="px-4 py-2.5 rounded-lg border border-white/10 bg-white/5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40" />
+                <input type="text" aria-label="Field (e.g. Computer Science)" placeholder="Field (e.g. Computer Science)" value={editDegree.field ?? ''} onChange={e => setEditDegree({ ...editDegree, field: e.target.value })} className="px-4 py-2.5 rounded-lg border border-white/10 bg-white/5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40" />
               </div>
               <div className="grid grid-cols-2 gap-3">
-                <input type="text" placeholder="Start Date" value={editDegree.startDate ?? ''} onChange={e => setEditDegree({ ...editDegree, startDate: e.target.value })} className="px-4 py-2.5 rounded-lg border border-white/10 bg-white/5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40" />
-                <input type="text" placeholder="End Date" value={editDegree.endDate ?? ''} onChange={e => setEditDegree({ ...editDegree, endDate: e.target.value })} className="px-4 py-2.5 rounded-lg border border-white/10 bg-white/5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40" />
+                <input type="text" aria-label="Start Date" placeholder="Start Date" value={editDegree.startDate ?? ''} onChange={e => setEditDegree({ ...editDegree, startDate: e.target.value })} className="px-4 py-2.5 rounded-lg border border-white/10 bg-white/5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40" />
+                <input type="text" aria-label="End Date" placeholder="End Date" value={editDegree.endDate ?? ''} onChange={e => setEditDegree({ ...editDegree, endDate: e.target.value })} className="px-4 py-2.5 rounded-lg border border-white/10 bg-white/5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40" />
               </div>
               <div className="grid grid-cols-2 gap-3">
-                <input type="text" placeholder="GPA" value={editDegree.gpa ?? ''} onChange={e => setEditDegree({ ...editDegree, gpa: e.target.value })} className="px-4 py-2.5 rounded-lg border border-white/10 bg-white/5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40" />
-                <input type="text" placeholder="Honors" value={editDegree.honors ?? ''} onChange={e => setEditDegree({ ...editDegree, honors: e.target.value })} className="px-4 py-2.5 rounded-lg border border-white/10 bg-white/5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40" />
+                <input type="text" aria-label="GPA" placeholder="GPA" value={editDegree.gpa ?? ''} onChange={e => setEditDegree({ ...editDegree, gpa: e.target.value })} className="px-4 py-2.5 rounded-lg border border-white/10 bg-white/5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40" />
+                <input type="text" aria-label="Honors" placeholder="Honors" value={editDegree.honors ?? ''} onChange={e => setEditDegree({ ...editDegree, honors: e.target.value })} className="px-4 py-2.5 rounded-lg border border-white/10 bg-white/5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40" />
               </div>
               <label className="flex items-center gap-2 text-sm text-white/60">
                 <input type="checkbox" checked={editDegree.isCurrent} onChange={e => setEditDegree({ ...editDegree, isCurrent: e.target.checked })} className="h-4 w-4" />
                 Currently attending
               </label>
             </div>
+            {recordError && <p role="alert" className="text-red-400 mt-3">{recordError}</p>}
             <div className="flex gap-2 mt-5 justify-end">
-              <Button variant="outline" onClick={() => setEditDegree(null)} className="border-white/10 hover:bg-white/5">Cancel</Button>
-              <Button onClick={saveDegree} className="bg-gradient-to-r from-blue-600 to-blue-500 border-0">Save</Button>
+              <Button disabled={savingRecord} variant="outline" onClick={() => { if (!savingRecord) setEditDegree(null) }} className="border-white/10 hover:bg-white/5">Cancel</Button>
+              <Button disabled={savingRecord || !editDegree.degreeName.trim()} onClick={saveDegree} className="bg-gradient-to-r from-blue-600 to-blue-500 border-0">Save</Button>
             </div>
           </div>
         </div>
@@ -606,23 +575,23 @@ export default function EducationPage() {
 
       {/* Edit Course Modal */}
       {editCourse && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => setEditCourse(null)}>
-          <div className="glass-card p-6 w-[480px]" onClick={e => e.stopPropagation()}>
-            <h3 className="text-lg font-semibold text-white mb-4">Edit Course</h3>
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => { if (!savingRecord) setEditCourse(null) }}>
+          <div className="glass-card p-6 w-full max-w-[480px] mx-4 max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold text-white mb-4">{editCourse.id ? 'Edit Course' : 'Add Course'}</h3>
             <div className="space-y-3">
               <div className="grid grid-cols-2 gap-3">
-                <input type="text" placeholder="Code (e.g. CS 101)" value={editCourse.code ?? ''} onChange={e => setEditCourse({ ...editCourse, code: e.target.value })} className="px-4 py-2.5 rounded-lg border border-white/10 bg-white/5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40" />
-                <input type="text" placeholder="Grade" value={editCourse.grade ?? ''} onChange={e => setEditCourse({ ...editCourse, grade: e.target.value })} className="px-4 py-2.5 rounded-lg border border-white/10 bg-white/5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40" />
+                <input type="text" aria-label="Code (e.g. CS 101)" placeholder="Code (e.g. CS 101)" value={editCourse.code ?? ''} onChange={e => setEditCourse({ ...editCourse, code: e.target.value })} className="px-4 py-2.5 rounded-lg border border-white/10 bg-white/5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40" />
+                <input type="text" aria-label="Grade" placeholder="Grade" value={editCourse.grade ?? ''} onChange={e => setEditCourse({ ...editCourse, grade: e.target.value })} className="px-4 py-2.5 rounded-lg border border-white/10 bg-white/5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40" />
               </div>
-              <input type="text" placeholder="Course Name *" value={editCourse.name} onChange={e => setEditCourse({ ...editCourse, name: e.target.value })} className="w-full px-4 py-2.5 rounded-lg border border-white/10 bg-white/5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40" />
+              <input type="text" aria-label="Course Name *" placeholder="Course Name *" value={editCourse.name} onChange={e => setEditCourse({ ...editCourse, name: e.target.value })} className="w-full px-4 py-2.5 rounded-lg border border-white/10 bg-white/5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40" />
               <div className="grid grid-cols-2 gap-3">
-                <input type="number" step="0.5" placeholder="Credits" value={editCourse.credits ?? ''} onChange={e => setEditCourse({ ...editCourse, credits: e.target.value ? parseFloat(e.target.value) : undefined })} className="px-4 py-2.5 rounded-lg border border-white/10 bg-white/5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40" />
-                <input type="text" placeholder="Term (e.g. Fall 2023)" value={editCourse.term ?? ''} onChange={e => setEditCourse({ ...editCourse, term: e.target.value })} className="px-4 py-2.5 rounded-lg border border-white/10 bg-white/5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40" />
+                <input type="number" step="0.5" aria-label="Credits" placeholder="Credits" value={editCourse.credits ?? ''} onChange={e => setEditCourse({ ...editCourse, credits: e.target.value ? parseFloat(e.target.value) : undefined })} className="px-4 py-2.5 rounded-lg border border-white/10 bg-white/5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40" />
+                <input type="text" aria-label="Term (e.g. Fall 2023)" placeholder="Term (e.g. Fall 2023)" value={editCourse.term ?? ''} onChange={e => setEditCourse({ ...editCourse, term: e.target.value })} className="px-4 py-2.5 rounded-lg border border-white/10 bg-white/5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40" />
               </div>
               <div>
                 <label className="text-xs text-white/40 mb-1 block">Assign to Degree</label>
                 <select
-                  value={editCourse.degreeId ?? ''}
+                  aria-label="Assign to Degree" value={editCourse.degreeId ?? ''}
                   onChange={e => setEditCourse({ ...editCourse, degreeId: e.target.value || undefined })}
                   className="w-full px-4 py-2.5 rounded-lg border border-white/10 bg-white/5 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40"
                 >
@@ -639,9 +608,10 @@ export default function EducationPage() {
                 Major-related (shows in resume Relevant Coursework)
               </label>
             </div>
+            {recordError && <p role="alert" className="text-red-400 mt-3">{recordError}</p>}
             <div className="flex gap-2 mt-5 justify-end">
-              <Button variant="outline" onClick={() => setEditCourse(null)} className="border-white/10 hover:bg-white/5">Cancel</Button>
-              <Button onClick={saveCourse} className="bg-gradient-to-r from-blue-600 to-blue-500 border-0">Save</Button>
+              <Button disabled={savingRecord} variant="outline" onClick={() => { if (!savingRecord) setEditCourse(null) }} className="border-white/10 hover:bg-white/5">Cancel</Button>
+              <Button disabled={savingRecord || !editCourse.name.trim()} onClick={saveCourse} className="bg-gradient-to-r from-blue-600 to-blue-500 border-0">Save</Button>
             </div>
           </div>
         </div>

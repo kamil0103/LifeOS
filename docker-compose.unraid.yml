@@ -31,6 +31,9 @@ services:
       Jwt__Secret: ${JWT_SECRET}
       Jwt__Issuer: ${JWT_ISSUER:-LifeOS}
       Jwt__Audience: ${JWT_AUDIENCE:-LifeOS}
+      GoogleCalendar__ClientId: ${GOOGLE_CALENDAR_CLIENT_ID:-}
+      GoogleCalendar__ClientSecret: ${GOOGLE_CALENDAR_CLIENT_SECRET:-}
+      GoogleCalendar__RedirectUri: ${GOOGLE_CALENDAR_REDIRECT_URI:-}
       Ai__Provider: ${AI_PROVIDER:-gemini}
       Ai__GeminiApiKey: ${GEMINI_API_KEY}
       Ai__OllamaBaseUrl: ${OLLAMA_BASE_URL}
@@ -38,6 +41,7 @@ services:
       MuseApiKey: ${MUSE_API_KEY}
       Google__ServiceAccountPath: ${GOOGLE_SERVICE_ACCOUNT_PATH:-/app/data/secrets/google-service-account.json}
     volumes:
+      - ${DATA_PATH:-/mnt/user/appdata/lifeos/data}/integrations:/app/data/integrations
       - ${DATA_PATH:-/mnt/user/appdata/lifeos/data}/generated:/app/data/generated
       - ${DATA_PATH:-/mnt/user/appdata/lifeos/data}/uploads:/app/data/uploads
       - ${DATA_PATH:-/mnt/user/appdata/lifeos/data}/secrets:/app/data/secrets:ro

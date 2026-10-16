@@ -1,8 +1,11 @@
+import DailyPlan from '@/modules/planning/DailyPlan'
+import { useQueryClient } from '@tanstack/react-query'
+import { notify } from '@/lib/notify'
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import api from '@/lib/api'
 import { Button } from '@/components/ui/button'
-import { Loader2, Check, Flame, Briefcase, Code, Target, ChevronRight, Sparkles, AlertTriangle, Lightbulb, Code2, BookOpen, Zap, Trophy, Star, BrainCircuit } from 'lucide-react'
+import { Loader2, Check, Flame, Briefcase, Code, Target, ChevronRight, Sparkles, AlertTriangle, Lightbulb, Code2, BookOpen, Trophy, BrainCircuit } from 'lucide-react'
 
 interface TodayHabit {
   id: string
@@ -74,14 +77,13 @@ interface DailyVerseData {
 
 export default function DashboardPage() {
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const [data, setData] = useState<DashboardData | null>(null)
   const [mission, setMission] = useState<DailyMission | null>(null)
   const [aiMessages, setAiMessages] = useState<AiMessage[]>([])
   const [codingStats, setCodingStats] = useState<CodingStats | null>(null)
   const [dailyVerse, setDailyVerse] = useState<DailyVerseData | null>(null)
   const [isLoading, setIsLoading] = useState(true)
-  const [completingId, setCompletingId] = useState<string | null>(null)
-  const [xpFlash, setXpFlash] = useState<number | null>(null)
   const [isGeneratingMission, setIsGeneratingMission] = useState(false)
 
   useEffect(() => {
@@ -133,28 +135,15 @@ export default function DashboardPage() {
     try {
       const { data } = await api.post('/aicoach/generate-mission')
       setMission(data)
+      queryClient.invalidateQueries({ queryKey: ['daily-plan'] })
       const { data: messages } = await api.get('/aicoach/messages?limit=2')
       setAiMessages(messages)
     } catch (err: any) {
       if (err.response?.data?.detail) {
-        alert(err.response.data.detail)
+        notify(err.response.data.detail)
       }
     } finally {
       setIsGeneratingMission(false)
-    }
-  }
-
-  const completeHabit = async (id: string) => {
-    setCompletingId(id)
-    try {
-      const { data: result } = await api.post(`/habits/${id}/complete`)
-      setXpFlash(result.xpEarned)
-      setTimeout(() => setXpFlash(null), 2000)
-      loadAllData()
-    } catch (err) {
-      console.error(err)
-    } finally {
-      setCompletingId(null)
     }
   }
 
@@ -193,22 +182,11 @@ export default function DashboardPage() {
     )
   }
 
-  const incompleteHabits = data.habits.filter(h => !h.isCompleted)
   const completedHabits = data.habits.filter(h => h.isCompleted)
   const progressPercent = data.xpForNextLevel > 0 ? (data.xpInCurrentLevel / data.xpForNextLevel) * 100 : 0
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
-      {/* XP Flash */}
-      {xpFlash && (
-        <div className="fixed top-20 right-8 glass-card px-5 py-3 z-50 animate-fade-in-up">
-          <div className="flex items-center gap-2">
-            <Zap className="h-5 w-5 text-amber-400" />
-            <span className="text-lg font-bold text-amber-400">+{xpFlash} XP!</span>
-          </div>
-        </div>
-      )}
-
       {/* Header */}
       <div className="animate-fade-in-up">
         <h1 className="page-header">What should you do today?</h1>
@@ -416,84 +394,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Today's Habits */}
-      <div className="animate-fade-in-up animate-delay-4">
-        <div className="flex items-center gap-3 mb-4">
-          <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-green-500/20 to-emerald-500/20 border border-green-500/20 flex items-center justify-center">
-            <Star className="h-4 w-4 text-green-400" />
-          </div>
-          <h2 className="text-lg font-semibold text-white">Today's Habits</h2>
-        </div>
-        
-        <div className="space-y-2">
-          {incompleteHabits.length === 0 && completedHabits.length === 0 && (
-            <div className="text-center py-12 glass-card">
-              <p className="text-white/30">No habits set up yet.</p>
-              <Button variant="ghost" onClick={() => navigate('/habits')} className="mt-2 text-blue-400 hover:text-blue-300 hover:bg-blue-500/5">
-                Create your first habit →
-              </Button>
-            </div>
-          )}
-
-          {incompleteHabits.map((habit) => (
-            <div key={habit.id} className="glass-card-hover p-4 flex items-center justify-between group">
-              <div className="flex items-center gap-4">
-                <Button
-                  size="sm"
-                  onClick={() => completeHabit(habit.id)}
-                  disabled={completingId === habit.id}
-                  className="h-9 w-9 rounded-full p-0 bg-white/5 hover:bg-green-500/20 border border-white/10 hover:border-green-500/30 transition-all"
-                >
-                  {completingId === habit.id ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Check className="h-4 w-4 text-green-400" />
-                  )}
-                </Button>
-                <div>
-                  <h3 className="font-medium text-white">{habit.name}</h3>
-                  <p className="text-sm text-white/40">
-                    {habit.category}
-                    {habit.currentStreak > 0 && (
-                      <span className="ml-2 text-orange-400">
-                        <Flame className="h-3 w-3 inline mr-0.5" />
-                        {habit.currentStreak} day streak
-                      </span>
-                    )}
-                  </p>
-                </div>
-              </div>
-            </div>
-          ))}
-
-          {completedHabits.length > 0 && (
-            <div className="mt-4 space-y-2">
-              <p className="text-xs font-medium text-white/30 uppercase tracking-wider ml-1">Completed</p>
-              {completedHabits.map((habit) => (
-                <div key={habit.id} className="glass-card p-4 opacity-50 flex items-center justify-between">
-                  <div className="flex items-center gap-4">
-                    <div className="h-9 w-9 rounded-full bg-green-500/10 flex items-center justify-center">
-                      <Check className="h-4 w-4 text-green-400" />
-                    </div>
-                    <div>
-                      <h3 className="font-medium text-white line-through">{habit.name}</h3>
-                      <p className="text-sm text-white/30">
-                        {habit.category}
-                        {habit.currentStreak > 0 && (
-                          <span className="ml-2 text-orange-400/60">
-                            <Flame className="h-3 w-3 inline mr-0.5" />
-                            {habit.currentStreak} day streak
-                          </span>
-                        )}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
+      <DailyPlan onCompleted={loadAllData} />
 
       {/* Quick Actions */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 animate-fade-in-up animate-delay-5">

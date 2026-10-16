@@ -1,0 +1,17 @@
+# AI Coach context and memory
+
+The Coach now saves a per-user conversation instead of treating each request as a standalone prompt. The UI displays the latest 100 messages; replies and new daily missions use the latest 12, with bounded message lengths. Saved notes are a separate, explicit memory store (20 notes, 500 characters each) that survives clearing a conversation. Users can add, edit and remove notes; the model cannot save notes or mutate application data by itself.
+
+Context is rebuilt for each request from enabled sources: bounded profile/skills, local-day habit progress, recent applications, coding activity, the current mission, calendar commitments and explicit saved notes. Profile contact fields, recruiter contacts and document contents are not collected. Journal text is disabled by default; opt-in includes at most three recent entries with bounded excerpts. Google event titles use the existing Calendar opt-in; otherwise only busy times are sent, without descriptions or locations.
+
+The context/privacy panel shows exactly which source sections are currently assembled, their content and their build time. The preview is a snapshot; a later send rebuilds it. Source changes affect future context assembly. Earlier replies can still contain previously shared information, so conversation deletion remains a separate control.
+
+The frontend preserves an unsent draft on provider failures and page reloads. A request UUID makes retries idempotent: successful user/assistant pairs are saved atomically, and the same request returns the previous answer. Reusing an identifier for different text is rejected. Provider failures do not create a fabricated assistant message or persist an incomplete turn.
+
+Daily missions reuse the same context and recent conversation, validate AI output, respect the user's local date, and generate only once per day under concurrent requests. Existing missions and completion state are preserved. The previous nonfunctional Regenerate button was removed. Individual priorities remain actionable through daily planning.
+
+Coach logic lives in `IAiCoachService` / `AiCoachService`; the controller delegates. Provider resolution is deferred until generation, so history, preferences and memory controls remain available without an AI connection. Coach records use distinct types in the existing per-user AI message store and are excluded from dashboard insight feeds. No database migration is required. PostgreSQL advisory transaction locks serialize per-user mutations independently of career workflows. Existing mission and insight records remain intact.
+
+Validation includes xUnit/Moq service tests and WebApplicationFactory APIs for source ownership, journal and Google-title privacy, history/retry semantics, invalid AI output, concurrent mission generation and separate clearing/deletion controls; Vitest component tests cover persisted conversation/drafts, privacy toggles and failed-send retry IDs. `tests/coach-live.cjs` verifies the configured model's follow-up recall and saved-note recall, concurrent retries, mission dedupe, journal opt-in and ownership with disposable accounts.
+
+Deployment checkpoint: `lifeos-api:coach-phase6` and `lifeos-frontend:coach-phase6`. Database/source/compose backups are under `/mnt/user/appdata/lifeos/backups/20261014-coach`. Google connection files and secrets remain outside the repository. Remaining approved work is learning/professional records and personal modules/analytics.

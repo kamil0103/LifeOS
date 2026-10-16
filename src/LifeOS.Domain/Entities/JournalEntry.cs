@@ -7,6 +7,7 @@ public class JournalEntry : BaseEntity
 
     public string Title { get; set; } = string.Empty;
     public string Content { get; set; } = string.Empty;
+    public DateOnly? JournalDate { get; set; }
     public DateTimeOffset EntryDate { get; set; } = DateTimeOffset.UtcNow;
     public string? Mood { get; set; }
 }

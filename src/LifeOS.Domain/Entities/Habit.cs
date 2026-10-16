@@ -9,6 +9,7 @@ public class Habit : BaseEntity
     public string Category { get; set; } = string.Empty; // coding, exercise, bible, prayer, etc.
     public decimal? TargetValue { get; set; }
     public string? Unit { get; set; }
+    public int ScheduleDaysMask { get; set; } = 127; // Sunday bit 0 through Saturday bit 6
     public string Frequency { get; set; } = "daily";
     public string? Icon { get; set; }
     public string? Color { get; set; }

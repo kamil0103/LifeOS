@@ -32,6 +32,9 @@ services:
       Jwt__Audience: ${JWT_AUDIENCE:-LifeOS}
       Jwt__AccessTokenExpirationMinutes: ${JWT_ACCESS_TOKEN_EXPIRATION_MINUTES:-15}
       Jwt__RefreshTokenExpirationDays: ${JWT_REFRESH_TOKEN_EXPIRATION_DAYS:-7}
+      GoogleCalendar__ClientId: ${GOOGLE_CALENDAR_CLIENT_ID:-}
+      GoogleCalendar__ClientSecret: ${GOOGLE_CALENDAR_CLIENT_SECRET:-}
+      GoogleCalendar__RedirectUri: ${GOOGLE_CALENDAR_REDIRECT_URI:-}
       Ai__Provider: ${AI_PROVIDER:-gemini}
       Ai__GeminiApiKey: ${GEMINI_API_KEY}
       Ai__OllamaBaseUrl: ${OLLAMA_BASE_URL:-http://ollama:11434}
@@ -40,6 +43,7 @@ services:
     ports:
       - "8080:8080"
     volumes:
+      - ./data/integrations:/app/data/integrations
       - ./data/generated:/app/data/generated
       - ./data/uploads:/app/data/uploads
     depends_on:

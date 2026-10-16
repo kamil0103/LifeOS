@@ -20,7 +20,8 @@ public class DocumentsController : ControllerBase
     private readonly IResumeGenerator _resumeGenerator;
     private readonly IResumeDataBuilder _resumeDataBuilder;
     private readonly IDocumentStorage _documentStorage;
-    private readonly IAiProvider _aiProvider;
+    private readonly Func<IAiProvider> _aiProvider;
+    private readonly ICareerWorkflowService _career;
 
     public DocumentsController(
         AppDbContext context,
@@ -28,7 +29,7 @@ public class DocumentsController : ControllerBase
         IResumeGenerator resumeGenerator,
         IResumeDataBuilder resumeDataBuilder,
         IDocumentStorage documentStorage,
-        IAiProvider aiProvider)
+        Func<IAiProvider> aiProvider, ICareerWorkflowService career)
     {
         _context = context;
         _currentUser = currentUser;
@@ -36,6 +37,7 @@ public class DocumentsController : ControllerBase
         _resumeDataBuilder = resumeDataBuilder;
         _documentStorage = documentStorage;
         _aiProvider = aiProvider;
+        _career = career;
     }
 
     private Guid GetUserId()
@@ -129,8 +131,8 @@ public class DocumentsController : ControllerBase
         // Generate content with AI when not provided
         if (string.IsNullOrWhiteSpace(opening) || string.IsNullOrWhiteSpace(body) || string.IsNullOrWhiteSpace(closing))
         {
-            var skills = await _context.Skills.AsNoTracking().Where(s => s.UserId == userId).Select(s => s.Name).ToListAsync(ct);
-            var experiences = await _context.WorkExperiences.AsNoTracking().Where(e => e.UserId == userId)
+            var skills = await _context.Skills.AsNoTracking().Where(s => s.UserId == userId).Select(s => s.LearningStatus == "learning" ? s.Name + " (learning)" : s.Name).ToListAsync(ct);
+            var experiences = await _context.WorkExperiences.AsNoTracking().Where(e => e.UserId == userId && e.IncludeInResume)
                 .Select(e => e.Title + " at " + e.Company + ": " + e.Bullets).ToListAsync(ct);
             var education = await _context.Degrees.AsNoTracking().Include(d => d.Institution).Where(d => d.UserId == userId)
                 .Select(d => d.DegreeName + " - " + (d.Institution != null ? d.Institution.Name : "")).ToListAsync(ct);
@@ -160,7 +162,7 @@ Return ONLY valid JSON:
 
             try
             {
-                var json = await _aiProvider.CompleteJsonAsync(systemPrompt, userPrompt, ct);
+                var json = await _aiProvider().CompleteJsonAsync(systemPrompt, userPrompt, ct);
                 var generated = JsonSerializer.Deserialize<CoverLetterAiContent>(json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
                 if (generated != null)
                 {
@@ -252,9 +254,10 @@ Return ONLY valid JSON:
         if (doc == null)
             return NotFound();
 
-        _documentStorage.Delete(doc.StoragePath);
+        await _career.EnsureAssetUnusedAsync(id,false,ct);
         _context.Documents.Remove(doc);
         await _context.SaveChangesAsync(ct);
+        _documentStorage.Delete(doc.StoragePath);
         return NoContent();
     }
 

@@ -1,3 +1,4 @@
+using LifeOS.Application.Interfaces;
 using System.Net;
 using System.Text.Json;
 
@@ -19,6 +20,18 @@ public class GlobalExceptionMiddleware
         try
         {
             await _next(context);
+        }
+        catch (RecordConflictException ex)
+        {
+            await WriteProblemResponse(context, HttpStatusCode.Conflict, ex.Message);
+        }
+        catch (CalendarEventAlreadyExistsException ex)
+        {
+            await WriteProblemResponse(context, HttpStatusCode.Conflict, ex.Message);
+        }
+        catch (CalendarConflictException ex)
+        {
+            await WriteProblemResponse(context, HttpStatusCode.Conflict, ex.Message);
         }
         catch (InvalidOperationException ex)
         {

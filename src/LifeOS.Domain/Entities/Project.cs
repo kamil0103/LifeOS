@@ -9,6 +9,8 @@ public class Project : BaseEntity
     public string? Description { get; set; }
     public string? Technologies { get; set; }
     public string? Link { get; set; }
+    public bool IncludeInResume { get; set; } = true;
+    public string AccomplishmentsJson { get; set; } = "[]";
     public string? StartDate { get; set; }
     public string? EndDate { get; set; }
     public bool IsCurrent { get; set; } = false;

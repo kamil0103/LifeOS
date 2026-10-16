@@ -1,4 +1,9 @@
-import { useState, useEffect } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
+import { Modal } from '@/components/ui/modal'
+import { useUnsavedChanges } from '@/hooks/useUnsavedChanges'
+import { filterJobs } from './job-filters'
+import { notify } from '@/lib/notify'
+import { useState, useEffect, useRef } from 'react'
 import api from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Loader2, Plus, Trash2, ExternalLink, Sparkles, Search, Save, Rss, Target, MessageSquare, X, Briefcase, Pencil, FileText } from 'lucide-react'
@@ -32,6 +37,13 @@ interface ExternalJob {
 }
 
 export default function JobsPage() {
+  const navigate = useNavigate()
+  const [filters, setFilters] = useState({ search: '', status: '', location: '', source: '', sort: 'newest' })
+  const [applications, setApplications] = useState<{ id: string; jobId: string }[]>([])
+  const [resumes, setResumes] = useState<{ id: string; title: string }[]>([])
+  const [trackingJob, setTrackingJob] = useState<Job | null>(null), [resumeId, setResumeId] = useState(''), [applicationNotes, setApplicationNotes] = useState(''), [tracking, setTracking] = useState(false)
+  const [jobDetails, setJobDetails] = useState<Job | null>(null), [loadError, setLoadError] = useState('')
+  const openedLink = useRef(false)
   const [activeTab, setActiveTab] = useState<'saved' | 'discover' | 'rss'>('saved')
   const [savedJobs, setSavedJobs] = useState<Job[]>([])
   const [discoveredJobs, setDiscoveredJobs] = useState<ExternalJob[]>([])
@@ -65,6 +77,11 @@ export default function JobsPage() {
   // Edit job modal
   const [editJob, setEditJob] = useState<Job | null>(null)
 
+  const visibleJobs = filterJobs(savedJobs, filters)
+  useUnsavedChanges(!!trackingJob && !!applicationNotes.trim() || !!editJob && JSON.stringify(editJob) !== JSON.stringify(savedJobs.find(j => j.id === editJob.id)) || showAddJob && !!(newJob.title || newJob.company || newJob.description || newJob.url || newJob.location || newJob.salaryRange))
+  useEffect(() => { api.get('/job-applications').then(({ data }) => setApplications(data)).catch(() => {}); api.get('/resume-versions').then(({ data }) => setResumes(data)).catch(() => {}) }, [])
+  useEffect(() => { const id = new URLSearchParams(window.location.search).get('job'); const job = savedJobs.find(j => j.id === id); if (job && !openedLink.current) { openedLink.current = true; setJobDetails(job) } }, [savedJobs])
+
   const saveEditedJob = async () => {
     if (!editJob) return
     try {
@@ -76,6 +93,7 @@ export default function JobsPage() {
         url: editJob.url,
         salaryRange: editJob.salaryRange,
         jobType: editJob.jobType,
+        postedDate: editJob.postedDate,
         status: editJob.status,
         matchScore: editJob.matchScore,
       })
@@ -83,7 +101,7 @@ export default function JobsPage() {
       loadSavedJobs()
     } catch (err) {
       console.error(err)
-      alert('Failed to update job')
+      notify((err as any).response?.data?.detail || 'Failed to update job', 'error')
     }
   }
 
@@ -96,8 +114,8 @@ export default function JobsPage() {
   const loadSavedJobs = () => {
     setIsLoading(true)
     api.get('/jobs')
-      .then(({ data }) => setSavedJobs(data))
-      .catch(console.error)
+      .then(({ data }) => { setSavedJobs(data); setLoadError('') })
+      .catch(() => setLoadError('Could not load saved jobs. Try again.'))
       .finally(() => setIsLoading(false))
   }
 
@@ -131,7 +149,7 @@ export default function JobsPage() {
       window.URL.revokeObjectURL(url)
     } catch (err: any) {
       console.error(err)
-      alert(err?.response?.data?.detail || 'Cover letter generation failed')
+      notify(err?.response?.data?.detail || 'Cover letter generation failed')
     } finally {
       setCoverLetterJobId(null)
     }
@@ -166,7 +184,7 @@ export default function JobsPage() {
         jobType: job.jobType,
         postedDate: job.postedDate
       })
-      alert('Job saved!')
+      notify('Job saved. Existing matches are reused.', 'success'); loadSavedJobs()
     } catch (err) {
       console.error(err)
     }
@@ -177,8 +195,8 @@ export default function JobsPage() {
     try {
       await api.delete(`/jobs/${id}`)
       loadSavedJobs()
-    } catch (err) {
-      console.error(err)
+    } catch (err: any) {
+      notify(err.response?.data?.detail || 'Could not delete the job.', 'error')
     }
   }
 
@@ -189,20 +207,17 @@ export default function JobsPage() {
       loadSavedJobs()
     } catch (err) {
       console.error(err)
-      alert('AI analysis failed. Make sure GEMINI_API_KEY is configured.')
+      notify('AI analysis failed. Make sure GEMINI_API_KEY is configured.')
     } finally {
       setAnalyzingId(null)
     }
   }
 
-  const applyToJob = async (jobId: string) => {
-    try {
-      await api.post('/applications', { jobId })
-      alert('Application tracked!')
-      loadSavedJobs()
-    } catch (err) {
-      console.error(err)
-    }
+  const applyToJob = (jobId: string) => { const existing = applications.find(a => a.jobId === jobId); if (existing) { navigate('/jobs/applications?application=' + existing.id); return } setTrackingJob(savedJobs.find(j => j.id === jobId) || null); setResumeId(''); setApplicationNotes('') }
+  const trackApplication = async () => {
+    if (!trackingJob) return
+    setTracking(true)
+    try { const { data } = await api.post('/job-applications', { jobId: trackingJob.id, resumeVersionId: resumeId || null, notes: applicationNotes || null }); setTrackingJob(null); notify('Application tracked.', 'success'); navigate('/jobs/applications?application=' + data.id) } catch (err: any) { notify(err.response?.data?.detail || 'Could not track the application.', 'error') } finally { setTracking(false) }
   }
 
   const analyzeMatch = async (jobId: string) => {
@@ -213,7 +228,7 @@ export default function JobsPage() {
       setShowMatchModal(true)
     } catch (err) {
       console.error(err)
-      alert('Match analysis failed')
+      notify('Match analysis failed')
     } finally {
       setAnalyzingId(null)
     }
@@ -227,7 +242,7 @@ export default function JobsPage() {
       setShowQaModal(true)
     } catch (err) {
       console.error(err)
-      alert('Interview Q&A generation failed')
+      notify('Interview Q&A generation failed')
     } finally {
       setAnalyzingId(null)
     }
@@ -241,7 +256,7 @@ export default function JobsPage() {
       setRssJobs(data)
     } catch (err) {
       console.error(err)
-      alert('RSS fetch failed')
+      notify('RSS fetch failed')
     } finally {
       setIsFetchingRss(false)
     }
@@ -255,7 +270,7 @@ export default function JobsPage() {
         link: job.link,
         company: job.company
       })
-      alert('Job imported!')
+      notify('Job imported!')
       setRssJobs(prev => prev.filter(j => j.link !== job.link))
     } catch (err) {
       console.error(err)
@@ -300,6 +315,9 @@ export default function JobsPage() {
           </button>
         ))}
       </div>
+
+      <Modal open={!!trackingJob} onClose={() => { if (!tracking && (!applicationNotes.trim() || window.confirm('Discard application notes?'))) setTrackingJob(null) }} title="Track application"><form className="space-y-4" onSubmit={e => { e.preventDefault(); trackApplication() }}><p>{trackingJob?.title} · {trackingJob?.company}</p><p className="text-sm text-muted-foreground">Record an application you submitted. Choose the saved resume version you used.</p><label className="block text-sm">Resume version<select className="w-full border rounded-md p-2 bg-background mt-1" value={resumeId} onChange={e => setResumeId(e.target.value)}><option value="">None selected</option>{resumes.map(r => <option key={r.id} value={r.id}>{r.title}</option>)}</select></label><Link className="text-sm underline" to="/resume">Open resume editor</Link><label className="block text-sm">Application notes<textarea className="w-full border rounded-md p-2 bg-background mt-1" value={applicationNotes} onChange={e => setApplicationNotes(e.target.value)} /></label><Button disabled={tracking}>{tracking ? 'Saving…' : 'Save application'}</Button></form></Modal>
+      <Modal open={!!jobDetails} onClose={() => setJobDetails(null)} title={jobDetails?.title || 'Job details'}>{jobDetails && <div className="space-y-4"><p className="font-medium">{jobDetails.company} · {jobDetails.location || 'Location not listed'}</p><p className="text-sm">{jobDetails.salaryRange} · {jobDetails.jobType || 'Type not listed'} · {jobDetails.source}</p><p className="whitespace-pre-wrap text-sm">{jobDetails.description || 'No description saved.'}</p><div className="flex flex-wrap gap-3"><Button onClick={() => { setJobDetails(null); applyToJob(jobDetails.id) }}>{applications.some(a => a.jobId === jobDetails.id) ? 'Open application' : 'Track application'}</Button><Link className="underline self-center" to={'/documents?job=' + jobDetails.id}>Job documents</Link><Link className="underline self-center" to={'/jobs/notes?company=' + encodeURIComponent(jobDetails.company)}>Company research</Link></div></div>}</Modal>
 
       {/* Add Job Modal */}
       {showAddJob && (
@@ -423,7 +441,7 @@ export default function JobsPage() {
 
       {activeTab === 'saved' && (
         <div className="space-y-4">
-          {savedJobs.length === 0 && !showAddJob && (
+          {savedJobs.length === 0 && !showAddJob && !loadError && (
             <div className="text-center py-12 glass-card">
               <Briefcase className="h-12 w-12 text-white/10 mx-auto mb-3" />
               <p className="text-white/30">No saved jobs yet.</p>
@@ -431,12 +449,21 @@ export default function JobsPage() {
             </div>
           )}
 
-          {savedJobs.map((job) => (
+          <div className="glass-card p-4 grid sm:grid-cols-2 lg:grid-cols-5 gap-3">
+            <input aria-label="Search saved jobs" className="border rounded-md p-2 bg-background text-sm" placeholder="Role, company or keywords" value={filters.search} onChange={e => setFilters({ ...filters, search: e.target.value })} />
+            <input aria-label="Filter job location" className="border rounded-md p-2 bg-background text-sm" placeholder="Location or remote" value={filters.location} onChange={e => setFilters({ ...filters, location: e.target.value })} />
+            <select aria-label="Filter job status" className="border rounded-md p-2 bg-background text-sm" value={filters.status} onChange={e => setFilters({ ...filters, status: e.target.value })}><option value="">All statuses</option>{['saved', 'applied', 'phone_screen', 'interview', 'offer', 'rejected', 'withdrawn'].map(s => <option key={s}>{s}</option>)}</select>
+            <select aria-label="Filter job source" className="border rounded-md p-2 bg-background text-sm" value={filters.source} onChange={e => setFilters({ ...filters, source: e.target.value })}><option value="">All sources</option>{Array.from(new Set(savedJobs.map(j => j.source))).map(s => <option key={s}>{s}</option>)}</select>
+            <select aria-label="Sort saved jobs" className="border rounded-md p-2 bg-background text-sm" value={filters.sort} onChange={e => setFilters({ ...filters, sort: e.target.value })}><option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="match">Best match first</option><option value="company">Company name</option></select>
+          </div>
+          {loadError && <p role="alert">{loadError} <Button onClick={loadSavedJobs}>Try again</Button></p>}
+          {!loadError && savedJobs.length > 0 && !visibleJobs.length && <p className="text-sm text-muted-foreground">No jobs match these filters. <button className="underline" onClick={() => setFilters({ search: '', status: '', location: '', source: '', sort: 'newest' })}>Clear filters</button></p>}
+          {visibleJobs.map((job) => (
             <div key={job.id} className="glass-card-hover p-6">
-              <div className="flex items-start justify-between">
+              <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <h3 className="font-semibold text-lg text-white">{job.title}</h3>
+                    <h3 className="font-semibold text-lg text-white"><button className="text-left hover:underline" onClick={() => setJobDetails(job)}>{job.title}</button></h3>
                     <span className={`text-xs px-2 py-0.5 rounded ${
                       job.status === 'saved' ? 'bg-white/5 text-white/40' :
                       job.status === 'applied' ? 'bg-blue-500/10 text-blue-400' :
@@ -446,7 +473,7 @@ export default function JobsPage() {
                     }`}>
                       {job.status}
                     </span>
-                    {job.matchScore && (
+                    {job.matchScore != null && (
                       <span className={`text-xs px-2 py-0.5 rounded ${
                         job.matchScore >= 80 ? 'bg-green-500/10 text-green-400' :
                         job.matchScore >= 60 ? 'bg-amber-500/10 text-amber-400' :
@@ -460,7 +487,7 @@ export default function JobsPage() {
                   {job.salaryRange && <p className="text-sm text-white/30">{job.salaryRange}</p>}
                   <p className="text-sm text-white/30 mt-2 line-clamp-2">{job.description}</p>
                 </div>
-                <div className="flex gap-2 ml-4">
+                <div className="flex flex-wrap gap-3">
                   {job.url && (
                     <a href={job.url} target="_blank" rel="noopener noreferrer" className="text-white/20 hover:text-blue-400 transition-colors">
                       <ExternalLink className="h-4 w-4" />
@@ -483,8 +510,8 @@ export default function JobsPage() {
                   <button onClick={() => analyzeJob(job.id)} disabled={analyzingId === job.id} title="AI Analysis" className="text-white/20 hover:text-blue-400 transition-colors">
                     <Sparkles className={`h-4 w-4 ${analyzingId === job.id ? 'animate-pulse' : ''}`} />
                   </button>
-                  {job.status === 'saved' && (
-                    <button onClick={() => applyToJob(job.id)} title="Mark Applied" className="text-white/20 hover:text-green-400 transition-colors">
+                  {!applications.some(a => a.jobId === job.id) && (
+                    <button onClick={() => applyToJob(job.id)} title="Track application" className="text-white/20 hover:text-green-400 transition-colors">
                       <Plus className="h-4 w-4" />
                     </button>
                   )}
@@ -493,6 +520,7 @@ export default function JobsPage() {
                   </button>
                 </div>
               </div>
+              <div className="flex flex-wrap gap-4 mt-3 text-sm"><button className="underline" onClick={() => setJobDetails(job)}>View details</button><Link className="underline" to={'/documents?job=' + job.id}>Documents</Link><Link className="underline" to={'/jobs/notes?company=' + encodeURIComponent(job.company)}>Company research</Link>{applications.find(a => a.jobId === job.id) && <Link className="underline" to={'/jobs/applications?application=' + applications.find(a => a.jobId === job.id)!.id}>Open application</Link>}</div>
             </div>
           ))}
         </div>
@@ -622,7 +650,7 @@ export default function JobsPage() {
       {/* Match Analysis Modal */}
       {showMatchModal && matchResult && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => setShowMatchModal(false)}>
-          <div className="glass-card p-6 w-[600px] max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+          <div className="glass-card p-6 w-full max-w-[600px] mx-4 max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <h2 className="text-xl font-semibold text-white mb-4">Match Analysis</h2>
             <div className="text-center mb-4">
               <p className="text-4xl font-bold text-blue-400">{matchResult.matchScore}%</p>
@@ -657,7 +685,7 @@ export default function JobsPage() {
       {/* Interview Q&A Modal */}
       {showQaModal && interviewQa && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50" onClick={() => setShowQaModal(false)}>
-          <div className="glass-card p-6 w-[700px] max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+          <div className="glass-card p-6 w-full max-w-[700px] mx-4 max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <h2 className="text-xl font-semibold text-white mb-2">Interview Preparation</h2>
             <p className="text-sm text-white/40 mb-4">{interviewQa.roleFocus}</p>
             <p className="text-sm text-white/60 mb-4">{interviewQa.preparationTips}</p>

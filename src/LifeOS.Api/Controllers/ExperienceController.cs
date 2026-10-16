@@ -1,5 +1,6 @@
 using LifeOS.Application.DTOs.Experience;
 using LifeOS.Domain.Entities;
+using LifeOS.Application.Interfaces;
 using LifeOS.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -13,10 +14,12 @@ namespace LifeOS.Api.Controllers;
 public class ExperienceController : ControllerBase
 {
     private readonly AppDbContext _context;
+    private readonly IProfessionalRecordService _records;
 
-    public ExperienceController(AppDbContext context)
+    public ExperienceController(AppDbContext context, IProfessionalRecordService records)
     {
         _context = context;
+        _records = records;
     }
 
     private Guid GetUserId()
@@ -42,45 +45,11 @@ public class ExperienceController : ControllerBase
 
     [HttpPost("work")]
     public async Task<ActionResult<WorkExperienceDto>> CreateWorkExperience(CreateWorkExperienceRequest request, CancellationToken ct)
-    {
-        var userId = GetUserId();
-        var experience = new WorkExperience
-        {
-            UserId = userId,
-            Company = request.Company,
-            Title = request.Title,
-            Location = request.Location,
-            StartDate = request.StartDate,
-            EndDate = request.EndDate,
-            IsCurrent = request.IsCurrent,
-            Bullets = request.Bullets
-        };
-
-        _context.WorkExperiences.Add(experience);
-        await _context.SaveChangesAsync(ct);
-        return Ok(MapWorkExperience(experience));
-    }
+        => Ok(await _records.SaveWorkAsync(GetUserId(), null, request, ct));
 
     [HttpPut("work/{id:guid}")]
     public async Task<ActionResult<WorkExperienceDto>> UpdateWorkExperience(Guid id, UpdateWorkExperienceRequest request, CancellationToken ct)
-    {
-        var userId = GetUserId();
-        var experience = await _context.WorkExperiences
-            .FirstOrDefaultAsync(w => w.Id == id && w.UserId == userId, ct);
-
-        if (experience == null) return NotFound();
-
-        experience.Company = request.Company;
-        experience.Title = request.Title;
-        experience.Location = request.Location;
-        experience.StartDate = request.StartDate;
-        experience.EndDate = request.EndDate;
-        experience.IsCurrent = request.IsCurrent;
-        experience.Bullets = request.Bullets;
-
-        await _context.SaveChangesAsync(ct);
-        return Ok(MapWorkExperience(experience));
-    }
+        => await _records.SaveWorkAsync(GetUserId(), id, request, ct) is { } result ? Ok(result) : NotFound();
 
     [HttpDelete("work/{id:guid}")]
     public async Task<IActionResult> DeleteWorkExperience(Guid id, CancellationToken ct)
@@ -112,47 +81,11 @@ public class ExperienceController : ControllerBase
 
     [HttpPost("projects")]
     public async Task<ActionResult<ProjectDto>> CreateProject(CreateProjectRequest request, CancellationToken ct)
-    {
-        var userId = GetUserId();
-        var project = new Project
-        {
-            UserId = userId,
-            Name = request.Name,
-            Description = request.Description,
-            Technologies = request.Technologies,
-            Link = request.Link,
-            StartDate = request.StartDate,
-            EndDate = request.EndDate,
-            IsCurrent = request.IsCurrent,
-            IsPortfolioProject = request.IsPortfolioProject
-        };
-
-        _context.Projects.Add(project);
-        await _context.SaveChangesAsync(ct);
-        return Ok(MapProject(project));
-    }
+        => Ok(await _records.SaveProjectAsync(GetUserId(), null, request, ct));
 
     [HttpPut("projects/{id:guid}")]
     public async Task<ActionResult<ProjectDto>> UpdateProject(Guid id, UpdateProjectRequest request, CancellationToken ct)
-    {
-        var userId = GetUserId();
-        var project = await _context.Projects
-            .FirstOrDefaultAsync(p => p.Id == id && p.UserId == userId, ct);
-
-        if (project == null) return NotFound();
-
-        project.Name = request.Name;
-        project.Description = request.Description;
-        project.Technologies = request.Technologies;
-        project.Link = request.Link;
-        project.StartDate = request.StartDate;
-        project.EndDate = request.EndDate;
-        project.IsCurrent = request.IsCurrent;
-        project.IsPortfolioProject = request.IsPortfolioProject;
-
-        await _context.SaveChangesAsync(ct);
-        return Ok(MapProject(project));
-    }
+        => await _records.SaveProjectAsync(GetUserId(), id, request, ct) is { } result ? Ok(result) : NotFound();
 
     [HttpDelete("projects/{id:guid}")]
     public async Task<IActionResult> DeleteProject(Guid id, CancellationToken ct)
@@ -177,6 +110,8 @@ public class ExperienceController : ControllerBase
         StartDate = w.StartDate,
         EndDate = w.EndDate,
         IsCurrent = w.IsCurrent,
+        IncludeInResume = w.IncludeInResume,
+        Accomplishments = LifeOS.Application.Services.AccomplishmentRules.Read(w.AccomplishmentsJson),
         Bullets = w.Bullets
     };
 
@@ -190,6 +125,8 @@ public class ExperienceController : ControllerBase
         StartDate = p.StartDate,
         EndDate = p.EndDate,
         IsCurrent = p.IsCurrent,
+        IncludeInResume = p.IncludeInResume,
+        Accomplishments = LifeOS.Application.Services.AccomplishmentRules.Read(p.AccomplishmentsJson),
         IsPortfolioProject = p.IsPortfolioProject
     };
 }

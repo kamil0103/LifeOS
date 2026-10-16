@@ -7,6 +7,8 @@ public class ProjectDto
     public string? Description { get; set; }
     public string? Technologies { get; set; }
     public string? Link { get; set; }
+    public bool? IncludeInResume { get; set; }
+    public List<AccomplishmentDto>? Accomplishments { get; set; }
     public string? StartDate { get; set; }
     public string? EndDate { get; set; }
     public bool IsCurrent { get; set; }
@@ -19,20 +21,12 @@ public class CreateProjectRequest
     public string? Description { get; set; }
     public string? Technologies { get; set; }
     public string? Link { get; set; }
+    public bool? IncludeInResume { get; set; }
+    public List<AccomplishmentDto>? Accomplishments { get; set; }
     public string? StartDate { get; set; }
     public string? EndDate { get; set; }
     public bool IsCurrent { get; set; } = false;
     public bool IsPortfolioProject { get; set; } = false;
 }
 
-public class UpdateProjectRequest
-{
-    public string Name { get; set; } = string.Empty;
-    public string? Description { get; set; }
-    public string? Technologies { get; set; }
-    public string? Link { get; set; }
-    public string? StartDate { get; set; }
-    public string? EndDate { get; set; }
-    public bool IsCurrent { get; set; } = false;
-    public bool IsPortfolioProject { get; set; } = false;
-}
+public class UpdateProjectRequest : CreateProjectRequest { }

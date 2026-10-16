@@ -7,5 +7,11 @@ public class CompanyNote : BaseEntity
 
     public string CompanyName { get; set; } = string.Empty;
     public string? Notes { get; set; }
+    public string? Website { get; set; }
+    public string? Industry { get; set; }
+    public string? Products { get; set; }
+    public string? TechnologyStack { get; set; }
+    public string? Culture { get; set; }
+    public string? InterviewPreparation { get; set; }
     public int? Rating { get; set; }
 }

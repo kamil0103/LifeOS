@@ -1,5 +1,6 @@
 using LifeOS.Application.DTOs.Bible;
 using LifeOS.Domain.Entities;
+using LifeOS.Application.Interfaces;
 using LifeOS.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -13,10 +14,12 @@ namespace LifeOS.Api.Controllers;
 public class BibleController : ControllerBase
 {
     private readonly AppDbContext _context;
+    private readonly IBibleReaderService _reader;
 
-    public BibleController(AppDbContext context)
+    public BibleController(AppDbContext context, IBibleReaderService reader)
     {
         _context = context;
+        _reader = reader;
     }
 
     private Guid GetUserId()
@@ -56,6 +59,7 @@ public class BibleController : ControllerBase
         var userId = GetUserId();
         var book = await _context.BibleBooks.AsNoTracking().FirstOrDefaultAsync(b => b.Id == bookId, ct);
         if (book == null) return NotFound();
+        if (chapter < 1 || chapter > book.ChapterCount) return BadRequest(new ProblemDetails { Detail = "Select a chapter in this book." });
 
         var verses = await _context.BibleVerses
             .AsNoTracking()
@@ -63,17 +67,9 @@ public class BibleController : ControllerBase
             .OrderBy(v => v.VerseNumber)
             .ToListAsync(ct);
 
-        var bookmarkedVerseIds = await _context.Bookmarks
-            .AsNoTracking()
-            .Where(b => b.UserId == userId)
-            .Select(b => b.VerseId)
-            .ToListAsync(ct);
-
-        var bookmarkMap = await _context.Bookmarks
-            .AsNoTracking()
-            .Where(b => b.UserId == userId && bookmarkedVerseIds.Contains(b.VerseId))
-            .ToDictionaryAsync(b => b.VerseId, b => b, ct);
-
+        var verseIds = verses.Select(v => v.Id).ToList();
+        var bookmarks = await _context.Bookmarks.AsNoTracking().Where(b => b.UserId == userId && verseIds.Contains(b.VerseId)).ToListAsync(ct);
+        var bookmarkMap = bookmarks.GroupBy(b => b.VerseId).ToDictionary(g => g.Key, g => g.OrderByDescending(b => b.UpdatedAt).ThenBy(b => b.Id).First());
         return new ChapterDto
         {
             BookId = bookId,
@@ -87,7 +83,7 @@ public class BibleController : ControllerBase
                 Chapter = v.Chapter,
                 VerseNumber = v.VerseNumber,
                 Text = v.Text,
-                IsBookmarked = bookmarkedVerseIds.Contains(v.Id),
+                IsBookmarked = bookmarkMap.ContainsKey(v.Id),
                 BookmarkColor = bookmarkMap.ContainsKey(v.Id) ? bookmarkMap[v.Id].Color : null,
                 BookmarkNote = bookmarkMap.ContainsKey(v.Id) ? bookmarkMap[v.Id].Note : null
             }).ToList()
@@ -115,6 +111,7 @@ public class BibleController : ControllerBase
             {
                 Id = v.Id,
                 BookName = v.Book.Name,
+                BookId = v.BookId,
                 Reference = $"{v.Book.Name} {v.Chapter}:{v.VerseNumber}",
                 Text = v.Text,
                 Chapter = v.Chapter,
@@ -125,81 +122,13 @@ public class BibleController : ControllerBase
         return results;
     }
 
-    private async Task<DateTime> GetUserLocalTodayAsync(Guid userId, CancellationToken ct)
-    {
-        var profile = await _context.UserProfiles.AsNoTracking().FirstOrDefaultAsync(p => p.UserId == userId, ct);
-        var tzId = profile?.TimeZone ?? "America/Los_Angeles";
-        TimeZoneInfo tz;
-        try
-        {
-            tz = TimeZoneInfo.FindSystemTimeZoneById(tzId);
-        }
-        catch
-        {
-            tz = TimeZoneInfo.FindSystemTimeZoneById("America/Los_Angeles");
-        }
-        var localNow = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, tz);
-        return localNow.Date;
-    }
-
-    // ==================== DAILY VERSE ====================
-
     [HttpGet("daily")]
     public async Task<ActionResult<DailyVerseDto>> GetDailyVerse(CancellationToken ct)
-    {
-        var userId = GetUserId();
-        var localToday = await GetUserLocalTodayAsync(userId, ct);
-        var dayOfYear = localToday.DayOfYear;
-
-        // Deterministic daily verse based on day of year + user id hash for uniqueness per user
-        var count = await _context.BibleVerses.CountAsync(ct);
-        if (count == 0)
-            return NotFound(new ProblemDetails { Title = "No verses", Detail = "Bible data has not been seeded yet." });
-
-        var index = (dayOfYear + Math.Abs(userId.GetHashCode())) % count;
-        var verse = await _context.BibleVerses
-            .AsNoTracking()
-            .Include(v => v.Book)
-            .Skip(index)
-            .Take(1)
-            .Select(v => new DailyVerseDto
-            {
-                Id = v.Id,
-                Reference = $"{v.Book.Name} {v.Chapter}:{v.VerseNumber}",
-                Text = v.Text
-            })
-            .FirstOrDefaultAsync(ct);
-
-        if (verse == null)
-            return NotFound();
-        return verse;
-    }
+        => await _reader.DailyAsync(GetUserId(), false, ct) is { } result ? Ok(result) : NotFound();
 
     [HttpPost("daily/refresh")]
     public async Task<ActionResult<DailyVerseDto>> RefreshDailyVerse(CancellationToken ct)
-    {
-        var count = await _context.BibleVerses.CountAsync(ct);
-        if (count == 0)
-            return NotFound();
-
-        var random = new Random();
-        var index = random.Next(0, count);
-        var verse = await _context.BibleVerses
-            .AsNoTracking()
-            .Include(v => v.Book)
-            .Skip(index)
-            .Take(1)
-            .Select(v => new DailyVerseDto
-            {
-                Id = v.Id,
-                Reference = $"{v.Book.Name} {v.Chapter}:{v.VerseNumber}",
-                Text = v.Text
-            })
-            .FirstOrDefaultAsync(ct);
-
-        if (verse == null) return NotFound();
-        return verse;
-    }
+        => await _reader.DailyAsync(GetUserId(), true, ct) is { } result ? Ok(result) : NotFound();
 
     // ==================== BOOKMARKS ====================
 
@@ -216,6 +145,8 @@ public class BibleController : ControllerBase
             {
                 Id = b.Id,
                 VerseId = b.VerseId,
+                BookId = b.Verse.BookId,
+                Chapter = b.Verse.Chapter,
                 Reference = $"{b.Verse.Book.Name} {b.Verse.Chapter}:{b.Verse.VerseNumber}",
                 Text = b.Verse.Text,
                 Note = b.Note,
@@ -228,63 +159,10 @@ public class BibleController : ControllerBase
     }
 
     [HttpPost("bookmarks")]
-    public async Task<ActionResult<BookmarkDto>> CreateBookmark([FromBody] CreateBookmarkRequest request, CancellationToken ct)
-    {
-        var userId = GetUserId();
-        var verse = await _context.BibleVerses.AsNoTracking().FirstOrDefaultAsync(v => v.Id == request.VerseId, ct);
-        if (verse == null)
-            return BadRequest(new ProblemDetails { Title = "Verse not found", Detail = "The specified verse does not exist." });
+    public async Task<ActionResult<BookmarkDto>> CreateBookmark(CreateBookmarkRequest request, CancellationToken ct)
+        => await _reader.BookmarkAsync(GetUserId(), request, ct);
 
-        var existing = await _context.Bookmarks.FirstOrDefaultAsync(b => b.UserId == userId && b.VerseId == request.VerseId, ct);
-        if (existing != null)
-        {
-            existing.Note = request.Note;
-            existing.Color = request.Color;
-            await _context.SaveChangesAsync(ct);
-            return new BookmarkDto
-            {
-                Id = existing.Id,
-                VerseId = existing.VerseId,
-                Reference = $"{verse.Book.Name} {verse.Chapter}:{verse.VerseNumber}",
-                Text = verse.Text,
-                Note = existing.Note,
-                Color = existing.Color,
-                CreatedAt = existing.CreatedAt
-            };
-        }
-
-        var bookmark = new Bookmark
-        {
-            UserId = userId,
-            VerseId = request.VerseId,
-            Note = request.Note,
-            Color = request.Color
-        };
-        _context.Bookmarks.Add(bookmark);
-        await _context.SaveChangesAsync(ct);
-
-        return new BookmarkDto
-        {
-            Id = bookmark.Id,
-            VerseId = bookmark.VerseId,
-            Reference = $"{verse.Book.Name} {verse.Chapter}:{verse.VerseNumber}",
-            Text = verse.Text,
-            Note = bookmark.Note,
-            Color = bookmark.Color,
-            CreatedAt = bookmark.CreatedAt
-        };
-    }
-
-    [HttpDelete("bookmarks/{id}")]
+    [HttpDelete("bookmarks/{id:guid}")]
     public async Task<IActionResult> DeleteBookmark(Guid id, CancellationToken ct)
-    {
-        var userId = GetUserId();
-        var bookmark = await _context.Bookmarks.FirstOrDefaultAsync(b => b.Id == id && b.UserId == userId, ct);
-        if (bookmark == null)
-            return NotFound();
-
-        _context.Bookmarks.Remove(bookmark);
-        await _context.SaveChangesAsync(ct);
-        return NoContent();
-    }
+        => await _reader.DeleteBookmarkAsync(GetUserId(), id, ct) ? NoContent() : NotFound();
 }

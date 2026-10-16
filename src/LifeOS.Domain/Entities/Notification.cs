@@ -9,6 +9,9 @@ public class Notification : BaseEntity
     public string Message { get; set; } = string.Empty;
     public string Type { get; set; } = "info"; // info, warning, success, habit, mission
     public string? ActionUrl { get; set; }
+    public string? SourceKey { get; set; }
+    public bool IsArchived { get; set; }
+    public DateTimeOffset? SnoozedUntil { get; set; }
     public bool IsRead { get; set; } = false;
     public new DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset? ReadAt { get; set; }

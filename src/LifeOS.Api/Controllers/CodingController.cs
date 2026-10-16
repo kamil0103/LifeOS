@@ -1,3 +1,4 @@
+using LifeOS.Application.Interfaces;
 using LifeOS.Application.DTOs.Coding;
 using LifeOS.Domain.Entities;
 using LifeOS.Infrastructure.Data;
@@ -13,10 +14,14 @@ namespace LifeOS.Api.Controllers;
 public class CodingController : ControllerBase
 {
     private readonly AppDbContext _context;
+    private readonly ILocalDayService _days;
+    private readonly ICodingProgressService _progress;
 
-    public CodingController(AppDbContext context)
+    public CodingController(AppDbContext context, ILocalDayService days, ICodingProgressService progress)
     {
         _context = context;
+        _days = days;
+        _progress = progress;
     }
 
     private Guid GetUserId()
@@ -39,6 +44,7 @@ public class CodingController : ControllerBase
         var query = _context.CodingProblems
             .AsNoTracking()
             .Where(p => p.UserId == userId)
+            .Include(p => p.Attempts)
             .AsQueryable();
 
         if (!string.IsNullOrWhiteSpace(difficulty))
@@ -58,186 +64,28 @@ public class CodingController : ControllerBase
     }
 
     [HttpPost("problems")]
-    public async Task<ActionResult<CodingProblemDto>> CreateProblem([FromBody] CreateCodingProblemRequest request, CancellationToken ct)
-    {
-        var userId = GetUserId();
-        var problem = new CodingProblem
-        {
-            UserId = userId,
-            Title = request.Title,
-            Platform = request.Platform,
-            Url = request.Url,
-            Difficulty = request.Difficulty.ToLower(),
-            Category = request.Category,
-            Description = request.Description,
-            Notes = request.Notes
-        };
-
-        _context.CodingProblems.Add(problem);
-        await _context.SaveChangesAsync(ct);
-
-        return MapToDto(problem);
-    }
+    public async Task<ActionResult<CodingProblemDto>> CreateProblem(CreateCodingProblemRequest request, CancellationToken ct)
+        => await _progress.CreateAsync(GetUserId(), request, ct);
 
     [HttpPut("problems/{id}")]
-    public async Task<ActionResult<CodingProblemDto>> UpdateProblem(Guid id, [FromBody] UpdateCodingProblemRequest request, CancellationToken ct)
-    {
-        var userId = GetUserId();
-        var problem = await _context.CodingProblems.FirstOrDefaultAsync(p => p.Id == id && p.UserId == userId, ct);
-        if (problem == null)
-            return NotFound();
-
-        problem.Title = request.Title;
-        problem.Platform = request.Platform;
-        problem.Url = request.Url;
-        problem.Difficulty = request.Difficulty.ToLower();
-        problem.Category = request.Category;
-        problem.Description = request.Description;
-        problem.Notes = request.Notes;
-
-        await _context.SaveChangesAsync(ct);
-        return MapToDto(problem);
-    }
+    public async Task<ActionResult<CodingProblemDto>> UpdateProblem(Guid id, UpdateCodingProblemRequest request, CancellationToken ct)
+        => await _progress.UpdateAsync(GetUserId(), id, request, ct) is { } result ? Ok(result) : NotFound();
 
     [HttpDelete("problems/{id}")]
     public async Task<IActionResult> DeleteProblem(Guid id, CancellationToken ct)
-    {
-        var userId = GetUserId();
-        var problem = await _context.CodingProblems
-            .Include(p => p.Attempts)
-            .FirstOrDefaultAsync(p => p.Id == id && p.UserId == userId, ct);
-        if (problem == null)
-            return NotFound();
-
-        _context.ProblemAttempts.RemoveRange(problem.Attempts);
-        _context.CodingProblems.Remove(problem);
-        await _context.SaveChangesAsync(ct);
-        return NoContent();
-    }
-
-    // ==================== SOLVE ====================
+        => await _progress.DeleteAsync(GetUserId(), id, ct) ? NoContent() : NotFound();
 
     [HttpPost("problems/{id}/solve")]
-    public async Task<ActionResult<CodingProblemDto>> SolveProblem(Guid id, [FromBody] SolveProblemRequest request, CancellationToken ct)
-    {
-        var userId = GetUserId();
-        var problem = await _context.CodingProblems
-            .Include(p => p.Attempts)
-            .FirstOrDefaultAsync(p => p.Id == id && p.UserId == userId, ct);
-        if (problem == null)
-            return NotFound();
+    public async Task<ActionResult<CodingProblemDto>> SolveProblem(Guid id, SolveProblemRequest request, CancellationToken ct)
+        => await _progress.RecordAsync(GetUserId(), id, request, false, ct) is { } result ? Ok(result) : NotFound();
 
-        // Calculate XP based on difficulty
-        var xpEarned = problem.Difficulty.ToLower() switch
-        {
-            "easy" => 10,
-            "medium" => 25,
-            "hard" => 50,
-            _ => 10
-        };
-
-        // First solve of the day bonus
-        var today = DateTimeOffset.UtcNow.Date;
-        var solvedToday = await _context.ProblemAttempts
-            .AnyAsync(a => a.Problem.UserId == userId && a.SolvedAt.Date == today, ct);
-        if (!solvedToday)
-            xpEarned += 5;
-
-        // Streak bonus
-        var streak = await GetCurrentStreak(userId, ct);
-        if (streak > 0)
-            xpEarned += Math.Min(streak * 2, 20); // Cap at +20
-
-        var attempt = new ProblemAttempt
-        {
-            ProblemId = id,
-            SolvedAt = DateTimeOffset.UtcNow,
-            SolutionLanguage = request.SolutionLanguage,
-            TimeSpentMinutes = request.TimeSpentMinutes,
-            Notes = request.Notes,
-            XpEarned = xpEarned
-        };
-
-        _context.ProblemAttempts.Add(attempt);
-
-        problem.IsSolved = true;
-        problem.SolvedAt = DateTimeOffset.UtcNow;
-        problem.SolutionLanguage = request.SolutionLanguage;
-        problem.TimeSpentMinutes = request.TimeSpentMinutes;
-
-        // Award XP
-        _context.XpTransactions.Add(new XpTransaction
-        {
-            UserId = userId,
-            Amount = xpEarned,
-            Source = "coding",
-            Description = $"Solved '{problem.Title}' ({problem.Difficulty})",
-            CreatedAt = DateTimeOffset.UtcNow
-        });
-
-        await _context.SaveChangesAsync(ct);
-        return MapToDto(problem);
-    }
+    [HttpPost("problems/{id}/reattempt")]
+    public async Task<ActionResult<CodingProblemDto>> ReattemptProblem(Guid id, SolveProblemRequest request, CancellationToken ct)
+        => await _progress.RecordAsync(GetUserId(), id, request, true, ct) is { } result ? Ok(result) : NotFound();
 
     [HttpPost("problems/{id}/unsolve")]
     public async Task<ActionResult<CodingProblemDto>> UnsolveProblem(Guid id, CancellationToken ct)
-    {
-        var userId = GetUserId();
-        var problem = await _context.CodingProblems
-            .Include(p => p.Attempts)
-            .FirstOrDefaultAsync(p => p.Id == id && p.UserId == userId, ct);
-        if (problem == null)
-            return NotFound();
-
-        problem.IsSolved = false;
-        problem.SolvedAt = null;
-        problem.SolutionLanguage = null;
-        problem.TimeSpentMinutes = null;
-
-        await _context.SaveChangesAsync(ct);
-        return MapToDto(problem);
-    }
-
-    [HttpPost("problems/{id}/reattempt")]
-    public async Task<ActionResult<CodingProblemDto>> ReattemptProblem(Guid id, [FromBody] SolveProblemRequest request, CancellationToken ct)
-    {
-        var userId = GetUserId();
-        var problem = await _context.CodingProblems
-            .Include(p => p.Attempts)
-            .FirstOrDefaultAsync(p => p.Id == id && p.UserId == userId, ct);
-        if (problem == null)
-            return NotFound();
-
-        var xpEarned = 5; // Reattempt bonus
-
-        var attempt = new ProblemAttempt
-        {
-            ProblemId = id,
-            SolvedAt = DateTimeOffset.UtcNow,
-            SolutionLanguage = request.SolutionLanguage,
-            TimeSpentMinutes = request.TimeSpentMinutes,
-            Notes = request.Notes,
-            XpEarned = xpEarned
-        };
-
-        _context.ProblemAttempts.Add(attempt);
-
-        problem.SolvedAt = DateTimeOffset.UtcNow;
-        problem.SolutionLanguage = request.SolutionLanguage;
-        problem.TimeSpentMinutes = request.TimeSpentMinutes;
-
-        _context.XpTransactions.Add(new XpTransaction
-        {
-            UserId = userId,
-            Amount = xpEarned,
-            Source = "coding",
-            Description = $"Re-solved '{problem.Title}'",
-            CreatedAt = DateTimeOffset.UtcNow
-        });
-
-        await _context.SaveChangesAsync(ct);
-        return MapToDto(problem);
-    }
+        => await _progress.UnsolveAsync(GetUserId(), id, ct) is { } result ? Ok(result) : NotFound();
 
     // ==================== ATTEMPTS ====================
 
@@ -280,7 +128,7 @@ public class CodingController : ControllerBase
             .ToListAsync(ct);
 
         var solved = problems.Where(p => p.IsSolved).ToList();
-        var attempts = solved.SelectMany(p => p.Attempts).ToList();
+        var attempts = problems.SelectMany(p => p.Attempts).ToList();
 
         var byCategory = solved
             .Where(p => !string.IsNullOrWhiteSpace(p.Category))
@@ -346,17 +194,18 @@ public class CodingController : ControllerBase
 
     private async Task<int> GetCurrentStreak(Guid userId, CancellationToken ct)
     {
-        var attempts = await _context.ProblemAttempts
+        var timestamps = await _context.ProblemAttempts
             .AsNoTracking()
             .Where(a => a.Problem.UserId == userId)
-            .Select(a => a.SolvedAt.Date)
-            .Distinct()
-            .OrderByDescending(d => d)
+            .Select(a => a.SolvedAt)
             .ToListAsync(ct);
+        var localDay = await _days.TodayAsync(userId, ct);
+        var attempts = timestamps.Select(localDay.DateOf).Distinct().OrderByDescending(d => d).ToList();
 
         if (attempts.Count == 0) return 0;
 
-        var today = DateTimeOffset.UtcNow.Date;
+        var day = await _days.TodayAsync(userId, ct);
+        var today = day.Date;
         var yesterday = today.AddDays(-1);
 
         // Check if solved today or yesterday
@@ -376,13 +225,13 @@ public class CodingController : ControllerBase
 
     private async Task<int> GetLongestStreak(Guid userId, CancellationToken ct)
     {
-        var dates = await _context.ProblemAttempts
+        var timestamps = await _context.ProblemAttempts
             .AsNoTracking()
             .Where(a => a.Problem.UserId == userId)
-            .Select(a => a.SolvedAt.Date)
-            .Distinct()
-            .OrderBy(d => d)
+            .Select(a => a.SolvedAt)
             .ToListAsync(ct);
+        var localDay = await _days.TodayAsync(userId, ct);
+        var dates = timestamps.Select(localDay.DateOf).Distinct().OrderBy(d => d).ToList();
 
         if (dates.Count == 0) return 0;
 
