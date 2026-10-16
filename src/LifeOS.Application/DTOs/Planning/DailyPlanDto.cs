@@ -21,4 +21,4 @@ public record ScheduleActionRequest(string ActionId, DateTimeOffset StartTime, D
 public record ScheduledActionResult(string EventId, string ActionUrl, bool AlreadyScheduled);
 public record FollowUpRequest(DateTimeOffset? DueAt, string? Notes, DateTimeOffset? EndAt = null);
 public record ApplicationDetailsRequest(string? RecruiterName, string? RecruiterEmail, string? RecruiterPhone, Guid? ResumeVersionId, Guid? CoverLetterDocumentId);
-public record ReminderPreferencesDto(bool FollowUpsEnabled, bool CalendarEnabled, bool CodingReviewsEnabled, int CalendarLeadMinutes);
+public record ReminderPreferencesDto(bool FollowUpsEnabled, bool CalendarEnabled, bool CodingReviewsEnabled, int CalendarLeadMinutes, bool? CertificateExpiryEnabled = null);

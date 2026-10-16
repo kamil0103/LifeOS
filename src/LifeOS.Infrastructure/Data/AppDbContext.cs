@@ -15,6 +15,7 @@ public class AppDbContext : DbContext
     public DbSet<Course> Courses => Set<Course>();
     public DbSet<WorkExperience> WorkExperiences => Set<WorkExperience>();
     public DbSet<Project> Projects => Set<Project>();
+    public DbSet<SkillEvidence> SkillEvidence => Set<SkillEvidence>();
     public DbSet<Skill> Skills => Set<Skill>();
     public DbSet<Certificate> Certificates => Set<Certificate>();
     public DbSet<Job> Jobs => Set<Job>();
@@ -94,6 +95,13 @@ public class AppDbContext : DbContext
             e.HasMany(a => a.StatusHistory).WithOne(h => h.Application).HasForeignKey(h => h.ApplicationId);
         });
 
+        modelBuilder.Entity<Skill>().Property(s => s.LearningStatus).HasDefaultValue("unspecified");
+        modelBuilder.Entity<WorkExperience>().Property(w => w.IncludeInResume).HasDefaultValue(true);
+        modelBuilder.Entity<WorkExperience>().Property(w => w.AccomplishmentsJson).HasDefaultValue("[]");
+        modelBuilder.Entity<Project>().Property(p => p.IncludeInResume).HasDefaultValue(true);
+        modelBuilder.Entity<Project>().Property(p => p.AccomplishmentsJson).HasDefaultValue("[]");
+        modelBuilder.Entity<ReminderPreferences>().Property(p => p.CertificateExpiryEnabled).HasDefaultValue(true);
+        modelBuilder.Entity<SkillEvidence>(e => { e.HasIndex(x => new { x.SkillId, x.SourceType, x.SourceId }).IsUnique(); e.HasOne(x => x.Skill).WithMany().HasForeignKey(x => x.SkillId).OnDelete(DeleteBehavior.Cascade); e.HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade); });
         modelBuilder.Entity<Habit>().Property(h => h.ScheduleDaysMask).HasDefaultValue(127);
         modelBuilder.Entity<HabitCompletion>().Property(c => c.IsCompleted).HasDefaultValue(true);
         modelBuilder.Entity<Habit>(e =>

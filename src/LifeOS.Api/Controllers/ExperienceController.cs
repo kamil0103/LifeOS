@@ -110,6 +110,8 @@ public class ExperienceController : ControllerBase
         StartDate = w.StartDate,
         EndDate = w.EndDate,
         IsCurrent = w.IsCurrent,
+        IncludeInResume = w.IncludeInResume,
+        Accomplishments = LifeOS.Application.Services.AccomplishmentRules.Read(w.AccomplishmentsJson),
         Bullets = w.Bullets
     };
 
@@ -123,6 +125,8 @@ public class ExperienceController : ControllerBase
         StartDate = p.StartDate,
         EndDate = p.EndDate,
         IsCurrent = p.IsCurrent,
+        IncludeInResume = p.IncludeInResume,
+        Accomplishments = LifeOS.Application.Services.AccomplishmentRules.Read(p.AccomplishmentsJson),
         IsPortfolioProject = p.IsPortfolioProject
     };
 }

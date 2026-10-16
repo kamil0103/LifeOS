@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Text.Json;
 using LifeOS.Application.DTOs.Skills;
 using LifeOS.Application.DTOs.Experience;
 using LifeOS.Application.DTOs.Portfolio;
@@ -28,6 +29,7 @@ public class ProfessionalRecordService(AppDbContext db, IGitHubRepositoryClient 
     {
         Name(r.Name, "skill name"); Name(r.Category, "category");
         if (!new[] { "Beginner", "Intermediate", "Advanced", "Expert" }.Contains(r.Proficiency)) throw new InvalidOperationException("Choose a listed skill proficiency.");
+        if (r.LearningStatus != null && !new[] { "unspecified", "learning", "demonstrated" }.Contains(r.LearningStatus)) throw new InvalidOperationException("Choose Unspecified, Learning or Demonstrated for the skill status.");
         if ((r.Source?.Length ?? 0) > 500) throw new InvalidOperationException("Skill source must be at most 500 characters.");
     }
     public Task<SkillDto?> SaveSkillAsync(Guid userId, Guid? id, CreateSkillRequest r, CancellationToken ct)
@@ -37,7 +39,7 @@ public class ProfessionalRecordService(AppDbContext db, IGitHubRepositoryClient 
             if (skill == null) return null;
             var normalized = r.Name.Trim().ToUpperInvariant(); var existing = (await db.Skills.Where(s => s.UserId == userId).ToListAsync(ct)).FirstOrDefault(s => s.Id != skill.Id && s.Name.Trim().ToUpperInvariant() == normalized);
             if (existing != null) { if (!id.HasValue) return Map(existing); throw new InvalidOperationException("A skill with that name already exists. Edit the existing skill instead."); }
-            skill.Name = r.Name.Trim(); skill.Category = r.Category.Trim(); skill.Proficiency = r.Proficiency; skill.Source = Text(r.Source);
+            skill.Name = r.Name.Trim(); skill.Category = r.Category.Trim(); skill.Proficiency = r.Proficiency; skill.Source = Text(r.Source); if(r.LearningStatus != null) skill.LearningStatus = r.LearningStatus;
             if (!id.HasValue) db.Skills.Add(skill); return Map(skill);
         }, ct);
     }
@@ -70,19 +72,24 @@ public class ProfessionalRecordService(AppDbContext db, IGitHubRepositoryClient 
         var company = Name(r.Company, "company name"); var title = Name(r.Title, "job title"); Dates(r.StartDate, r.IsCurrent ? null : r.EndDate);
         return WriteAsync<WorkExperienceDto?>(userId, async () => {
             var work = id.HasValue ? await db.WorkExperiences.FirstOrDefaultAsync(w => w.Id == id && w.UserId == userId, ct) : new WorkExperience { UserId = userId }; if (work == null) return null;
+            if(r.Accomplishments!=null){var rows=AccomplishmentRules.Validate(r.Accomplishments);work.AccomplishmentsJson=JsonSerializer.Serialize(rows);r.Bullets=rows.Count>0?AccomplishmentRules.Text(rows):r.Bullets;}
+            else if(AccomplishmentRules.Read(work.AccomplishmentsJson).Count>0&&Text(r.Bullets)!=work.Bullets)throw new InvalidOperationException("Edit the structured accomplishments to change these bullets.");
+            if(r.IncludeInResume.HasValue)work.IncludeInResume=r.IncludeInResume.Value;
             work.Company = company; work.Title = title; work.Location = Text(r.Location); work.StartDate = Text(r.StartDate); work.EndDate = r.IsCurrent ? null : Text(r.EndDate); work.IsCurrent = r.IsCurrent; work.Bullets = Text(r.Bullets);
-            if (!id.HasValue) db.WorkExperiences.Add(work); return new() { Id = work.Id, Company = work.Company, Title = work.Title, Location = work.Location, StartDate = work.StartDate, EndDate = work.EndDate, IsCurrent = work.IsCurrent, Bullets = work.Bullets };
+            if (!id.HasValue) db.WorkExperiences.Add(work); return new() { Id = work.Id, Company = work.Company, Title = work.Title, Location = work.Location, StartDate = work.StartDate, EndDate = work.EndDate, IsCurrent = work.IsCurrent, Bullets = work.Bullets, IncludeInResume = work.IncludeInResume, Accomplishments = AccomplishmentRules.Read(work.AccomplishmentsJson) };
         }, ct);
     }
     private static void Apply(Project p, CreateProjectRequest r)
     {
+        if(r.Accomplishments!=null)p.AccomplishmentsJson=JsonSerializer.Serialize(AccomplishmentRules.Validate(r.Accomplishments));
+        if(r.IncludeInResume.HasValue)p.IncludeInResume=r.IncludeInResume.Value;
         p.Name = Name(r.Name, "project name"); Dates(r.StartDate, r.IsCurrent ? null : r.EndDate); p.Link = Url(r.Link);
         p.Description = Text(r.Description); p.Technologies = Text(r.Technologies); p.StartDate = Text(r.StartDate); p.EndDate = r.IsCurrent ? null : Text(r.EndDate); p.IsCurrent = r.IsCurrent; p.IsPortfolioProject = r.IsPortfolioProject;
         if (!p.IsPortfolioProject) p.IsFeatured = false;
     }
     public Task<ProjectDto?> SaveProjectAsync(Guid userId, Guid? id, CreateProjectRequest r, CancellationToken ct) => WriteAsync<ProjectDto?>(userId, async () => {
         var p = id.HasValue ? await db.Projects.FirstOrDefaultAsync(p => p.Id == id && p.UserId == userId, ct) : new Project { UserId = userId }; if (p == null) return null;
-        Apply(p, r); if (!id.HasValue) db.Projects.Add(p); return new() { Id = p.Id, Name = p.Name, Description = p.Description, Technologies = p.Technologies, Link = p.Link, StartDate = p.StartDate, EndDate = p.EndDate, IsCurrent = p.IsCurrent, IsPortfolioProject = p.IsPortfolioProject };
+        Apply(p, r); if (!id.HasValue) db.Projects.Add(p); return new() { Id = p.Id, Name = p.Name, Description = p.Description, Technologies = p.Technologies, Link = p.Link, StartDate = p.StartDate, EndDate = p.EndDate, IsCurrent = p.IsCurrent, IsPortfolioProject = p.IsPortfolioProject, IncludeInResume = p.IncludeInResume, Accomplishments = AccomplishmentRules.Read(p.AccomplishmentsJson) };
     }, ct);
     private static void ApplyPortfolio(Project p, string? repo, string? deployed, string? screenshot, bool featured, bool portfolio)
     {
@@ -119,7 +126,7 @@ public class ProfessionalRecordService(AppDbContext db, IGitHubRepositoryClient 
             p.GitHubStars = repo.Stars; if (string.IsNullOrWhiteSpace(p.Description)) p.Description = repo.Description; if (string.IsNullOrWhiteSpace(p.Technologies)) p.Technologies = repo.Language; return Map(p);
         }, ct);
     }
-    private static SkillDto Map(Skill s) => new() { Id = s.Id, Name = s.Name, Category = s.Category, Proficiency = s.Proficiency, Source = s.Source };
+    private static SkillDto Map(Skill s) => new() { Id = s.Id, Name = s.Name, Category = s.Category, Proficiency = s.Proficiency, Source = s.Source, LearningStatus = s.LearningStatus };
     private static CertificateDto Map(Certificate c, DateOnly today) => new() { Id = c.Id, Name = c.Name, Issuer = c.Issuer, DateObtained = c.DateObtained, Expiry = c.Expiry, CredentialId = c.CredentialId, Url = c.Url, Description = c.Description, ExpiryStatus = Expiry(c.Expiry, today) };
     public static PortfolioProjectDto Map(Project p) => new() { Id = p.Id, Name = p.Name, Description = p.Description, Technologies = p.Technologies, Link = p.Link, StartDate = p.StartDate, EndDate = p.EndDate, IsCurrent = p.IsCurrent, GitHubRepoUrl = p.GitHubRepoUrl, DeployedUrl = p.DeployedUrl, ScreenshotUrl = p.ScreenshotUrl, IsFeatured = p.IsFeatured, GitHubStars = p.GitHubStars, ReadmePreview = p.ReadmePreview };
 }

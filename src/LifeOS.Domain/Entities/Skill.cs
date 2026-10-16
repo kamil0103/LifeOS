@@ -8,5 +8,6 @@ public class Skill : BaseEntity
     public string Name { get; set; } = string.Empty;
     public string Category { get; set; } = "Other";
     public string Proficiency { get; set; } = "Beginner";
+    public string LearningStatus { get; set; } = "unspecified";
     public string? Source { get; set; }
 }

@@ -10,12 +10,12 @@ public class ReminderService(AppDbContext db) : IReminderService
 {
     private static readonly ConcurrentDictionary<Guid,SemaphoreSlim> Gates=new();
     public async Task<ReminderPreferencesDto> PreferencesAsync(Guid userId,CancellationToken ct)
-    {var p=await db.ReminderPreferences.AsNoTracking().FirstOrDefaultAsync(p=>p.UserId==userId,ct);return p==null?new(true,true,true,30):new(p.FollowUpsEnabled,p.CalendarEnabled,p.CodingReviewsEnabled,p.CalendarLeadMinutes);}
+    {var p=await db.ReminderPreferences.AsNoTracking().FirstOrDefaultAsync(p=>p.UserId==userId,ct);return p==null?new(true,true,true,30):new(p.FollowUpsEnabled,p.CalendarEnabled,p.CodingReviewsEnabled,p.CalendarLeadMinutes,p.CertificateExpiryEnabled);}
     public async Task SavePreferencesAsync(Guid userId,ReminderPreferencesDto request,CancellationToken ct)
     {
         if(request.CalendarLeadMinutes<0 || request.CalendarLeadMinutes>1440)throw new InvalidOperationException("Calendar reminder lead time must be between 0 and 1440 minutes.");
         var p=await db.ReminderPreferences.FirstOrDefaultAsync(p=>p.UserId==userId,ct);if(p==null){p=new(){UserId=userId};db.ReminderPreferences.Add(p);}
-        p.FollowUpsEnabled=request.FollowUpsEnabled;p.CalendarEnabled=request.CalendarEnabled;p.CodingReviewsEnabled=request.CodingReviewsEnabled;p.CalendarLeadMinutes=request.CalendarLeadMinutes;await db.SaveChangesAsync(ct);
+        p.FollowUpsEnabled=request.FollowUpsEnabled;p.CalendarEnabled=request.CalendarEnabled;p.CodingReviewsEnabled=request.CodingReviewsEnabled;p.CalendarLeadMinutes=request.CalendarLeadMinutes;p.CertificateExpiryEnabled=request.CertificateExpiryEnabled??p.CertificateExpiryEnabled;await db.SaveChangesAsync(ct);
     }
     public async Task RemindAsync(Guid userId,DailyPlanDto plan,CancellationToken ct)
     {
@@ -26,6 +26,18 @@ public class ReminderService(AppDbContext db) : IReminderService
                 candidates.Add(new(){UserId=userId,SourceKey=action.Id+":"+action.DueAt!.Value.ToUnixTimeSeconds(),Title=action.Title,Message=action.Reason,Type="reminder",ActionUrl=action.ActionUrl});
             if(prefs.CalendarEnabled)foreach(var commitment in plan.Commitments.Where(c=>c.StartTime<=now.AddMinutes(prefs.CalendarLeadMinutes) && (c.EndTime??c.StartTime.AddHours(1))>now))
                 candidates.Add(new(){UserId=userId,SourceKey="calendar:"+commitment.Id+":"+commitment.StartTime.ToUnixTimeSeconds(),Title=commitment.Title,Message=commitment.IsAllDay?"On your calendar today.":"Starts at "+TimeZoneInfo.ConvertTime(commitment.StartTime,LifeOS.Application.Services.LocalDay.At(now,plan.TimeZone).Zone).ToString("h:mm tt"),Type="reminder",ActionUrl=commitment.ActionUrl});
+            if(prefs.CertificateExpiryEnabled??true)
+            {
+                var today=DateOnly.FromDateTime(LifeOS.Application.Services.LocalDay.At(now,plan.TimeZone).Date);
+                var certificates=await db.Certificates.AsNoTracking().Where(c=>c.UserId==userId&&c.Expiry!=null).ToListAsync(ct);
+                foreach(var certificate in certificates)
+                {
+                    DateOnly? end;try{end=LifeOS.Application.Services.ProfessionalRecordRules.DateRange(certificate.Expiry)?.End;}catch(InvalidOperationException){continue;}
+                    if(!end.HasValue||end.Value.DayNumber-today.DayNumber>30)continue;
+                    var expired=end.Value<today;var stage=expired?"expired":"soon";
+                    candidates.Add(new(){UserId=userId,SourceKey=$"certificate:{certificate.Id}:{end.Value:yyyy-MM-dd}:{stage}",Title=expired?"Certificate expired: "+certificate.Name:"Certificate expiring: "+certificate.Name,Message=$"Expiry: {end.Value:yyyy-MM-dd}. Review renewal details in Skills and Certificates.",Type="reminder",ActionUrl="/skills?tab=certificates"});
+                }
+            }
             var keys=candidates.Select(n=>n.SourceKey).ToHashSet();
             var existing=await db.Notifications.Where(n=>n.UserId==userId && n.SourceKey!=null).ToListAsync(ct);
             foreach(var n in existing.Where(n=>!n.IsRead && !n.IsArchived && !keys.Contains(n.SourceKey) && !(plan.GoogleWarning!=null && n.SourceKey!.StartsWith("calendar:google:")))){n.IsArchived=true;n.IsRead=true;n.ReadAt=now;}

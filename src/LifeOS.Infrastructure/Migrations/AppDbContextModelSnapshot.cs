@@ -1002,6 +1002,12 @@ namespace LifeOS.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<string>("AccomplishmentsJson")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("text")
+                        .HasDefaultValue("[]");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -1019,6 +1025,11 @@ namespace LifeOS.Infrastructure.Migrations
 
                     b.Property<int?>("GitHubStars")
                         .HasColumnType("integer");
+
+                    b.Property<bool>("IncludeInResume")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true);
 
                     b.Property<bool>("IsCurrent")
                         .HasColumnType("boolean");
@@ -1329,6 +1340,11 @@ namespace LifeOS.Infrastructure.Migrations
                     b.Property<int>("CalendarLeadMinutes")
                         .HasColumnType("integer");
 
+                    b.Property<bool>("CertificateExpiryEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true);
+
                     b.Property<bool>("CodingReviewsEnabled")
                         .HasColumnType("boolean");
 
@@ -1387,6 +1403,12 @@ namespace LifeOS.Infrastructure.Migrations
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("LearningStatus")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("text")
+                        .HasDefaultValue("unspecified");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasColumnType("text");
@@ -1409,6 +1431,44 @@ namespace LifeOS.Infrastructure.Migrations
                     b.HasIndex("UserId");
 
                     b.ToTable("Skills");
+                });
+
+            modelBuilder.Entity("LifeOS.Domain.Entities.SkillEvidence", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Notes")
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("SkillId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("SourceId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("SourceType")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId");
+
+                    b.HasIndex("SkillId", "SourceType", "SourceId")
+                        .IsUnique();
+
+                    b.ToTable("SkillEvidence");
                 });
 
             modelBuilder.Entity("LifeOS.Domain.Entities.Streak", b =>
@@ -1522,6 +1582,12 @@ namespace LifeOS.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
+                    b.Property<string>("AccomplishmentsJson")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("text")
+                        .HasDefaultValue("[]");
+
                     b.Property<string>("Bullets")
                         .HasColumnType("text");
 
@@ -1534,6 +1600,11 @@ namespace LifeOS.Infrastructure.Migrations
 
                     b.Property<string>("EndDate")
                         .HasColumnType("text");
+
+                    b.Property<bool>("IncludeInResume")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true);
 
                     b.Property<bool>("IsCurrent")
                         .HasColumnType("boolean");
@@ -2023,6 +2094,25 @@ namespace LifeOS.Infrastructure.Migrations
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("LifeOS.Domain.Entities.SkillEvidence", b =>
+                {
+                    b.HasOne("LifeOS.Domain.Entities.Skill", "Skill")
+                        .WithMany()
+                        .HasForeignKey("SkillId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("LifeOS.Domain.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Skill");
 
                     b.Navigation("User");
                 });

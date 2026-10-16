@@ -6,5 +6,6 @@ public class ReminderPreferences
     public bool FollowUpsEnabled { get; set; } = true;
     public bool CalendarEnabled { get; set; } = true;
     public bool CodingReviewsEnabled { get; set; } = true;
+    public bool CertificateExpiryEnabled { get; set; } = true;
     public int CalendarLeadMinutes { get; set; } = 30;
 }

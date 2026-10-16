@@ -39,13 +39,13 @@ public class ResumeDataBuilder : IResumeDataBuilder
 
         var workExp = await _context.WorkExperiences
             .AsNoTracking()
-            .Where(e => e.UserId == userId)
+            .Where(e => e.UserId == userId && e.IncludeInResume)
             .OrderByDescending(e => e.StartDate)
             .ToListAsync(ct);
 
         var projects = await _context.Projects
             .AsNoTracking()
-            .Where(p => p.UserId == userId)
+            .Where(p => p.UserId == userId && p.IncludeInResume)
             .OrderByDescending(p => p.StartDate)
             .ToListAsync(ct);
 
@@ -67,7 +67,7 @@ public class ResumeDataBuilder : IResumeDataBuilder
             .Select(g => new ResumeSkillGroupDto
             {
                 Category = g.Key,
-                Skills = g.Select(s => s.Name).ToList()
+                Skills = g.Select(s => s.LearningStatus == "learning" ? s.Name + " (learning)" : s.Name).ToList()
             })
             .ToList();
 
@@ -128,7 +128,7 @@ public class ResumeDataBuilder : IResumeDataBuilder
             {
                 Id = p.Id,
                 Name = p.Name,
-                Description = p.Description ?? "",
+                Description = string.Join("\n", new[] { p.Description, LifeOS.Application.Services.AccomplishmentRules.Text(LifeOS.Application.Services.AccomplishmentRules.Read(p.AccomplishmentsJson)) }.Where(x => !string.IsNullOrWhiteSpace(x))),
                 Technologies = p.Technologies ?? "",
                 Link = p.Link ?? "",
                 StartDate = p.StartDate,

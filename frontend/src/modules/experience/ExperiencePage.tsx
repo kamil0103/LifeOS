@@ -1,3 +1,4 @@
+import AccomplishmentEditor, { type Accomplishment } from './AccomplishmentEditor'
 import { useState, useEffect } from 'react'
 import api from '@/lib/api'
 import { useRecordActions } from '@/hooks/useRecordActions'
@@ -12,6 +13,8 @@ interface WorkExp {
   location?: string
   startDate?: string
   endDate?: string
+  includeInResume?: boolean
+  accomplishments?: Accomplishment[]
   isCurrent: boolean
   bullets?: string
 }
@@ -24,6 +27,8 @@ interface Project {
   link?: string
   startDate?: string
   endDate?: string
+  includeInResume?: boolean
+  accomplishments?: Accomplishment[]
   isCurrent: boolean
   isPortfolioProject: boolean
 }
@@ -37,12 +42,12 @@ export default function ExperiencePage() {
 
   const [showAddWork, setShowAddWork] = useState(false)
   const [newWork, setNewWork] = useState({
-    company: '', title: '', location: '', startDate: '', endDate: '', isCurrent: false, bullets: ''
+    company: '', title: '', location: '', startDate: '', endDate: '', isCurrent: false, bullets: '', includeInResume: true, accomplishments: [] as Accomplishment[]
   })
 
   const [showAddProj, setShowAddProj] = useState(false)
   const [newProj, setNewProj] = useState({
-    name: '', description: '', technologies: '', link: '', startDate: '', endDate: '', isCurrent: false, isPortfolioProject: false
+    name: '', description: '', technologies: '', link: '', startDate: '', endDate: '', isCurrent: false, isPortfolioProject: false, includeInResume: true, accomplishments: [] as Accomplishment[]
   })
 
   useEffect(() => {
@@ -62,7 +67,7 @@ export default function ExperiencePage() {
     return mutate(async () => {
       if (!newWork.company || !newWork.title) return
       await api.post('/experience/work', newWork)
-      setNewWork({ company: '', title: '', location: '', startDate: '', endDate: '', isCurrent: false, bullets: '' })
+      setNewWork({ company: '', title: '', location: '', startDate: '', endDate: '', isCurrent: false, bullets: '', includeInResume: true, accomplishments: [] as Accomplishment[] })
       setShowAddWork(false)
       await loadData()
     })
@@ -72,7 +77,7 @@ export default function ExperiencePage() {
     return mutate(async () => {
       if (!newProj.name) return
       await api.post('/experience/projects', newProj)
-      setNewProj({ name: '', description: '', technologies: '', link: '', startDate: '', endDate: '', isCurrent: false, isPortfolioProject: false })
+      setNewProj({ name: '', description: '', technologies: '', link: '', startDate: '', endDate: '', isCurrent: false, isPortfolioProject: false, includeInResume: true, accomplishments: [] as Accomplishment[] })
       setShowAddProj(false)
       await loadData()
     })
@@ -93,6 +98,8 @@ export default function ExperiencePage() {
         endDate: editWork.endDate,
         isCurrent: editWork.isCurrent,
         bullets: editWork.bullets,
+        includeInResume: editWork.includeInResume ?? true,
+        accomplishments: editWork.accomplishments,
     })
     setEditWork(null)
     await loadData()
@@ -111,6 +118,8 @@ export default function ExperiencePage() {
         endDate: editProj.endDate,
         isCurrent: editProj.isCurrent,
         isPortfolioProject: editProj.isPortfolioProject,
+        includeInResume: editProj.includeInResume ?? true,
+        accomplishments: editProj.accomplishments,
     })
     setEditProj(null)
     await loadData()
@@ -194,7 +203,11 @@ export default function ExperiencePage() {
                 </div>
                 <input placeholder="Start Date (YYYY-MM)" value={newWork.startDate} onChange={(e) => setNewWork({ ...newWork, startDate: e.target.value })} className="px-3 py-2 rounded-md border bg-background text-sm" />
                 <input placeholder="End Date (YYYY-MM)" value={newWork.endDate} onChange={(e) => setNewWork({ ...newWork, endDate: e.target.value })} className="px-3 py-2 rounded-md border bg-background text-sm" />
-                <textarea placeholder="Bullet points (one per line)" value={newWork.bullets} onChange={(e) => setNewWork({ ...newWork, bullets: e.target.value })} className="px-3 py-2 rounded-md border bg-background text-sm min-h-[80px] md:col-span-2" />
+
+              <label className="flex gap-2 items-center text-sm md:col-span-2"><input type="checkbox" checked={newWork.includeInResume ?? true} onChange={e => setNewWork({ ...newWork, includeInResume: e.target.checked })} />Include this work experience in new resumes</label>
+              <AccomplishmentEditor rows={newWork.accomplishments || []} disabled={busy} onChange={rows => setNewWork({ ...newWork, accomplishments: rows, bullets: rows.length ? rows.map(r => [r.action, r.outcome, r.metric].filter(Boolean).join(' — ')).join('\n') : (newWork.accomplishments?.length ? '' : newWork.bullets) })} />
+              {!newWork.accomplishments?.length && (<textarea placeholder="Bullet points (one per line)" value={newWork.bullets} onChange={(e) => setNewWork({ ...newWork, bullets: e.target.value })} className="px-3 py-2 rounded-md border bg-background text-sm min-h-[80px] md:col-span-2" />)}
+
               </div>
               <div className="mt-4 flex gap-2">
                 <Button disabled={busy} onClick={addWork}>Save</Button>
@@ -226,6 +239,7 @@ export default function ExperiencePage() {
                   </Button>
                 </div>
               </div>
+              <p className="text-xs text-muted-foreground mt-2">{exp.includeInResume === false ? 'Excluded from new resumes' : 'Included in new resumes'} · <a className="underline" href={`/skills?sourceType=work&sourceId=${exp.id}`}>Link skills to this experience</a></p>
               {exp.bullets && (
                 <div className="mt-3 text-sm whitespace-pre-line text-muted-foreground">{exp.bullets}</div>
               )}
@@ -263,6 +277,9 @@ export default function ExperiencePage() {
                 <input placeholder="Start Date (YYYY-MM)" value={newProj.startDate} onChange={(e) => setNewProj({ ...newProj, startDate: e.target.value })} className="px-3 py-2 rounded-md border bg-background text-sm" />
                 <input placeholder="End Date (YYYY-MM)" value={newProj.endDate} onChange={(e) => setNewProj({ ...newProj, endDate: e.target.value })} className="px-3 py-2 rounded-md border bg-background text-sm" />
                 <textarea placeholder="Description" value={newProj.description} onChange={(e) => setNewProj({ ...newProj, description: e.target.value })} className="px-3 py-2 rounded-md border bg-background text-sm min-h-[80px] md:col-span-2" />
+              <label className="flex gap-2 items-center text-sm md:col-span-2"><input type="checkbox" checked={newProj.includeInResume ?? true} onChange={e => setNewProj({ ...newProj, includeInResume: e.target.checked })} />Include this project in new resumes</label>
+              <AccomplishmentEditor rows={newProj.accomplishments || []} disabled={busy} onChange={rows => setNewProj({ ...newProj, accomplishments: rows })} />
+
               </div>
               <div className="mt-4 flex gap-2">
                 <Button disabled={busy} onClick={addProject}>Save</Button>
@@ -304,6 +321,8 @@ export default function ExperiencePage() {
                   </Button>
                 </div>
               </div>
+              <p className="text-xs text-muted-foreground mt-2">{proj.includeInResume === false ? 'Excluded from new resumes' : 'Included in new resumes'} · <a className="underline" href={`/skills?sourceType=project&sourceId=${proj.id}`}>Link skills to this project</a></p>
+              {!!proj.accomplishments?.length && <ul className="list-disc pl-5 text-sm mt-2">{proj.accomplishments.map((row, index) => <li key={index}>{[row.action, row.outcome, row.metric].filter(Boolean).join(' — ')}</li>)}</ul>}
               {proj.description && <p className="mt-3 text-sm text-muted-foreground">{proj.description}</p>}
             </div>
           ))}
@@ -325,7 +344,11 @@ export default function ExperiencePage() {
               </div>
               <input placeholder="Start Date (YYYY-MM)" value={editWork.startDate ?? ''} onChange={e => setEditWork({ ...editWork, startDate: e.target.value })} className="px-3 py-2 rounded-md border bg-background text-sm" />
               <input placeholder="End Date (YYYY-MM)" value={editWork.endDate ?? ''} onChange={e => setEditWork({ ...editWork, endDate: e.target.value })} className="px-3 py-2 rounded-md border bg-background text-sm" />
-              <textarea placeholder="Bullet points (one per line)" value={editWork.bullets ?? ''} onChange={e => setEditWork({ ...editWork, bullets: e.target.value })} className="px-3 py-2 rounded-md border bg-background text-sm min-h-[120px] md:col-span-2" />
+
+              <label className="flex gap-2 items-center text-sm md:col-span-2"><input type="checkbox" checked={editWork.includeInResume ?? true} onChange={e => setEditWork({ ...editWork, includeInResume: e.target.checked })} />Include this work experience in new resumes</label>
+              <AccomplishmentEditor rows={editWork.accomplishments || []} disabled={busy} onChange={rows => setEditWork({ ...editWork, accomplishments: rows, bullets: rows.length ? rows.map(r => [r.action, r.outcome, r.metric].filter(Boolean).join(' — ')).join('\n') : (editWork.accomplishments?.length ? '' : editWork.bullets) })} />
+              {!editWork.accomplishments?.length && (<textarea placeholder="Bullet points (one per line)" value={editWork.bullets ?? ''} onChange={e => setEditWork({ ...editWork, bullets: e.target.value })} className="px-3 py-2 rounded-md border bg-background text-sm min-h-[120px] md:col-span-2" />)}
+
             </div>
             <div className="mt-4 flex gap-2 justify-end">
               <Button variant="outline" onClick={() => setEditWork(null)}>Cancel</Button>
@@ -357,6 +380,9 @@ export default function ExperiencePage() {
               <input placeholder="Start Date (YYYY-MM)" value={editProj.startDate ?? ''} onChange={e => setEditProj({ ...editProj, startDate: e.target.value })} className="px-3 py-2 rounded-md border bg-background text-sm" />
               <input placeholder="End Date (YYYY-MM)" value={editProj.endDate ?? ''} onChange={e => setEditProj({ ...editProj, endDate: e.target.value })} className="px-3 py-2 rounded-md border bg-background text-sm" />
               <textarea placeholder="Description" value={editProj.description ?? ''} onChange={e => setEditProj({ ...editProj, description: e.target.value })} className="px-3 py-2 rounded-md border bg-background text-sm min-h-[100px] md:col-span-2" />
+              <label className="flex gap-2 items-center text-sm md:col-span-2"><input type="checkbox" checked={editProj.includeInResume ?? true} onChange={e => setEditProj({ ...editProj, includeInResume: e.target.checked })} />Include this project in new resumes</label>
+              <AccomplishmentEditor rows={editProj.accomplishments || []} disabled={busy} onChange={rows => setEditProj({ ...editProj, accomplishments: rows })} />
+
             </div>
             <div className="mt-4 flex gap-2 justify-end">
               <Button variant="outline" onClick={() => setEditProj(null)}>Cancel</Button>

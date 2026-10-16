@@ -30,6 +30,15 @@ public class SkillsController : ControllerBase
         return Guid.Parse(sub!);
     }
 
+    [HttpGet("evidence-options")]
+    public async Task<ActionResult<List<EvidenceSourceDto>>> EvidenceOptions([FromServices] ISkillEvidenceService evidence,CancellationToken ct)=>Ok(await evidence.SourcesAsync(GetUserId(),ct));
+    [HttpGet("{id:guid}/evidence")]
+    public async Task<ActionResult<List<SkillEvidenceDto>>> Evidence(Guid id,[FromServices] ISkillEvidenceService evidence,CancellationToken ct)=>await evidence.ListAsync(GetUserId(),id,ct) is {} result?Ok(result):NotFound();
+    [HttpPost("{id:guid}/evidence")]
+    public async Task<ActionResult<SkillEvidenceDto>> AddEvidence(Guid id,SaveSkillEvidenceRequest request,[FromServices] ISkillEvidenceService evidence,CancellationToken ct)=>await evidence.AddAsync(GetUserId(),id,request,ct) is {} result?Ok(result):NotFound();
+    [HttpDelete("{id:guid}/evidence/{evidenceId:guid}")]
+    public async Task<IActionResult> RemoveEvidence(Guid id,Guid evidenceId,[FromServices] ISkillEvidenceService evidence,CancellationToken ct)=>await evidence.RemoveAsync(GetUserId(),id,evidenceId,ct)?NoContent():NotFound();
+
     // ==================== SKILLS ====================
     [HttpGet]
     public async Task<ActionResult<List<SkillDto>>> GetSkills(CancellationToken ct)
@@ -138,6 +147,7 @@ public class SkillsController : ControllerBase
         Name = s.Name,
         Category = s.Category,
         Proficiency = s.Proficiency,
+        LearningStatus = s.LearningStatus,
         Source = s.Source
     };
 

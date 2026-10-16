@@ -27,9 +27,9 @@ public class AiCoachTests
     [Fact]
     public async Task ContextIsOwnedAndJournalRequiresOptIn()
     {
-        using var f=new Fixture();var foreign=Guid.NewGuid();f.Db.UserProfiles.Add(new(){UserId=f.User,TargetRoles="Embedded C++"});f.Db.Skills.Add(new(){UserId=foreign,Name="FOREIGN_PRIVATE_SKILL"});f.Db.JournalEntries.Add(new(){UserId=f.User,Title="Private",Content="OWN_JOURNAL_TEXT"});f.Db.JournalEntries.Add(new(){UserId=foreign,Content="FOREIGN_JOURNAL"});await f.Db.SaveChangesAsync();
+        using var f=new Fixture();var foreign=Guid.NewGuid();f.Db.UserProfiles.Add(new(){UserId=f.User,TargetRoles="Embedded C++"});f.Db.Skills.Add(new(){UserId=foreign,Name="FOREIGN_PRIVATE_SKILL"});var learning=new Skill{UserId=f.User,Name="Rust",LearningStatus="learning"};f.Db.Skills.Add(learning);f.Db.SkillEvidence.Add(new(){UserId=f.User,SkillId=learning.Id,SourceType="work",SourceId=Guid.NewGuid(),Notes="PRIVATE_EVIDENCE_NOTE"});f.Db.JournalEntries.Add(new(){UserId=f.User,Title="Private",Content="OWN_JOURNAL_TEXT"});f.Db.JournalEntries.Add(new(){UserId=foreign,Content="FOREIGN_JOURNAL"});await f.Db.SaveChangesAsync();
         await f.Coach.SaveMemoryAsync(f.User,null,new("OWN_SAVED_NOTE"),default);await f.Coach.SaveMemoryAsync(foreign,null,new("FOREIGN_MEMORY"),default);
-        var content=System.Text.Json.JsonSerializer.Serialize(await f.Coach.ContextAsync(f.User,default));Assert.Contains("OWN_SAVED_NOTE",content);Assert.Contains("Embedded",content);Assert.DoesNotContain("OWN_JOURNAL_TEXT",content);Assert.DoesNotContain("FOREIGN_",content);
+        var content=System.Text.Json.JsonSerializer.Serialize(await f.Coach.ContextAsync(f.User,default));Assert.Contains("OWN_SAVED_NOTE",content);Assert.Contains("Embedded",content);Assert.Contains("learning",content);Assert.DoesNotContain("PRIVATE_EVIDENCE_NOTE",content);Assert.DoesNotContain("OWN_JOURNAL_TEXT",content);Assert.DoesNotContain("FOREIGN_",content);
         await f.Coach.SavePreferencesAsync(f.User,new(true,true,false,true),default);content=System.Text.Json.JsonSerializer.Serialize(await f.Coach.ContextAsync(f.User,default));Assert.Contains("OWN_JOURNAL_TEXT",content);Assert.DoesNotContain("FOREIGN_",content);
     }
     [Fact]

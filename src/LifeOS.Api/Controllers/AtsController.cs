@@ -140,9 +140,9 @@ For recommendations, type may be skill, keyword, or note. The changeSummary MUST
     private async Task<string> BuildResumeData(Guid userId, CancellationToken ct)
     {
         var profile = await _context.UserProfiles.AsNoTracking().FirstOrDefaultAsync(p => p.UserId == userId, ct);
-        var skills = await _context.Skills.AsNoTracking().Where(s => s.UserId == userId).Select(s => s.Name).ToListAsync(ct);
-        var experience = await _context.WorkExperiences.AsNoTracking().Where(e => e.UserId == userId).ToListAsync(ct);
-        var projects = await _context.Projects.AsNoTracking().Where(p => p.UserId == userId).ToListAsync(ct);
+        var skills = await _context.Skills.AsNoTracking().Where(s => s.UserId == userId).Select(s => s.LearningStatus == "learning" ? s.Name + " (learning)" : s.Name).ToListAsync(ct);
+        var experience = await _context.WorkExperiences.AsNoTracking().Where(e => e.UserId == userId && e.IncludeInResume).ToListAsync(ct);
+        var projects = await _context.Projects.AsNoTracking().Where(p => p.UserId == userId && p.IncludeInResume).ToListAsync(ct);
         var education = await _context.Degrees.AsNoTracking().Where(d => d.UserId == userId).Include(d => d.Institution).ToListAsync(ct);
 
         var lines = new List<string>();
@@ -158,6 +158,7 @@ For recommendations, type may be skill, keyword, or note. The changeSummary MUST
         foreach (var proj in projects)
         {
             lines.Add($"Project: {proj.Name} - {proj.Description}");
+            lines.Add(LifeOS.Application.Services.AccomplishmentRules.Text(LifeOS.Application.Services.AccomplishmentRules.Read(proj.AccomplishmentsJson)));
         }
         foreach (var edu in education)
         {

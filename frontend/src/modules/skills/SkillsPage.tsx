@@ -1,3 +1,4 @@
+import SkillEvidencePanel from './SkillEvidencePanel'
 import { notify } from '@/lib/notify'
 import { useState, useEffect } from 'react'
 import api from '@/lib/api'
@@ -12,6 +13,7 @@ interface Skill {
   category: string
   proficiency: string
   source?: string
+  learningStatus?: string
 }
 
 interface Certificate {
@@ -39,7 +41,7 @@ export default function SkillsPage() {
   const [skills, setSkills] = useState<Skill[]>([])
   const [certificates, setCertificates] = useState<Certificate[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState<'skills' | 'certificates'>('skills')
+  const [activeTab, setActiveTab] = useState<'skills' | 'certificates'>(new URLSearchParams(window.location.search).get('tab') === 'certificates' ? 'certificates' : 'skills')
 
   const [isExtractingAi, setIsExtractingAi] = useState(false)
   const [extractedModalSkills, setExtractedModalSkills] = useState<Array<{ name: string; category: string; proficiency: string; selected: boolean }>>([])
@@ -66,7 +68,7 @@ export default function SkillsPage() {
     setShowExtractModal(false); await loadData()
   })
   const [showAddSkill, setShowAddSkill] = useState(false)
-  const [newSkill, setNewSkill] = useState({ name: '', category: 'Programming Language', proficiency: 'Beginner', source: '' })
+  const [newSkill, setNewSkill] = useState({ name: '', category: 'Programming Language', proficiency: 'Beginner', source: '', learningStatus: 'unspecified' })
 
   const [showAddCert, setShowAddCert] = useState(false)
   const [newCert, setNewCert] = useState({ name: '', issuer: '', dateObtained: '', expiry: '', credentialId: '', url: '', description: '' })
@@ -88,7 +90,7 @@ export default function SkillsPage() {
     return mutate(async () => {
       if (!newSkill.name) return
       await api.post('/skills', newSkill)
-      setNewSkill({ name: '', category: 'Programming Language', proficiency: 'Beginner', source: '' })
+      setNewSkill({ name: '', category: 'Programming Language', proficiency: 'Beginner', source: '', learningStatus: 'unspecified' })
       setShowAddSkill(false)
       await loadData()
     })
@@ -105,6 +107,7 @@ export default function SkillsPage() {
   }
 
   // Edit modals
+  const [evidenceSkill, setEvidenceSkill] = useState<Skill | null>(null)
   const [editSkill, setEditSkill] = useState<Skill | null>(null)
   const [editCert, setEditCert] = useState<Certificate | null>(null)
 
@@ -116,6 +119,7 @@ export default function SkillsPage() {
         category: editSkill.category,
         proficiency: editSkill.proficiency,
         source: editSkill.source,
+        learningStatus: editSkill.learningStatus || 'unspecified',
     })
     setEditSkill(null)
     await loadData()
@@ -224,6 +228,7 @@ export default function SkillsPage() {
                 <select value={newSkill.proficiency} onChange={(e) => setNewSkill({ ...newSkill, proficiency: e.target.value })} className="px-3 py-2 rounded-md border bg-background text-sm">
                   {proficiencies.map(p => <option key={p} value={p}>{p}</option>)}
                 </select>
+                <label className="block text-sm">Skill status<select aria-label="New skill status" className="w-full p-2 border rounded bg-background" value={newSkill.learningStatus} onChange={e => setNewSkill({ ...newSkill, learningStatus: e.target.value })}><option value="unspecified">Unspecified</option><option value="learning">Learning</option><option value="demonstrated">Demonstrated (self-reported)</option></select></label>
                 <input placeholder="Source (e.g. Course or Project)" value={newSkill.source} onChange={(e) => setNewSkill({ ...newSkill, source: e.target.value })} className="px-3 py-2 rounded-md border bg-background text-sm md:col-span-3" />
               </div>
               <div className="mt-4 flex gap-2">
@@ -242,13 +247,13 @@ export default function SkillsPage() {
               <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider mb-4">{category}</h3>
               <div className="flex flex-wrap gap-2">
                 {catSkills.map((skill) => (
-                  <div key={skill.id} className="flex items-center gap-2 bg-accent px-3 py-2 rounded-md">
+                  <div key={skill.id} className="flex flex-wrap items-center gap-2 bg-accent px-3 py-2 rounded-md max-w-full">
                     <span className="text-sm font-medium">{skill.name}</span>
-                    <span className="text-xs text-muted-foreground">{skill.proficiency}</span>
+                    <span className="text-xs text-muted-foreground">{skill.proficiency} · {skill.learningStatus || 'unspecified'}</span><Button aria-label={`Evidence for ${skill.name}`} variant="outline" size="sm" onClick={() => setEvidenceSkill(skill)}>Evidence</Button>
                     <button aria-label={`Edit ${skill.name}`} onClick={() => setEditSkill(skill)} className="text-muted-foreground hover:text-foreground">
                       <Pencil className="h-3 w-3" />
                     </button>
-                    <button onClick={() => deleteSkill(skill.id)} className="text-destructive hover:text-destructive/80">
+                    <button aria-label={`Delete ${skill.name}`} onClick={() => deleteSkill(skill.id)} className="text-destructive hover:text-destructive/80">
                       <Trash2 className="h-3 w-3" />
                     </button>
                   </div>
@@ -324,6 +329,7 @@ export default function SkillsPage() {
         </div>
       )}
       {/* Edit Skill Modal */}
+      {evidenceSkill && <SkillEvidencePanel skill={evidenceSkill} onClose={() => setEvidenceSkill(null)} />}
       {editSkill && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setEditSkill(null)}>
           <div className="bg-card border rounded-lg p-6 w-full max-w-[420px] mx-4" onClick={e => e.stopPropagation()}>
@@ -336,6 +342,7 @@ export default function SkillsPage() {
               <select value={editSkill.proficiency} onChange={e => setEditSkill({ ...editSkill, proficiency: e.target.value })} className="w-full px-3 py-2 rounded-md border bg-background text-sm">
                 {proficiencies.map(p => <option key={p} value={p}>{p}</option>)}
               </select>
+              <label className="block text-sm">Skill status<select aria-label="Skill status" className="w-full p-2 border rounded bg-background" value={editSkill.learningStatus || 'unspecified'} onChange={e => setEditSkill({ ...editSkill, learningStatus: e.target.value })}><option value="unspecified">Unspecified</option><option value="learning">Learning</option><option value="demonstrated">Demonstrated (self-reported)</option></select></label>
               <input placeholder="Source (e.g. Course or Project)" value={editSkill.source ?? ''} onChange={e => setEditSkill({ ...editSkill, source: e.target.value })} className="w-full px-3 py-2 rounded-md border bg-background text-sm" />
             </div>
             <div className="flex gap-2 mt-5 justify-end">

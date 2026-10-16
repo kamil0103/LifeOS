@@ -6,6 +6,7 @@ public class SkillDto
     public string Name { get; set; } = string.Empty;
     public string Category { get; set; } = string.Empty;
     public string Proficiency { get; set; } = string.Empty;
+    public string? LearningStatus { get; set; }
     public string? Source { get; set; }
 }
 
@@ -14,6 +15,7 @@ public class CreateSkillRequest
     public string Name { get; set; } = string.Empty;
     public string Category { get; set; } = "Other";
     public string Proficiency { get; set; } = "Beginner";
+    public string? LearningStatus { get; set; }
     public string? Source { get; set; }
 }
 

@@ -8,6 +8,8 @@ public class WorkExperience : BaseEntity
     public string Company { get; set; } = string.Empty;
     public string Title { get; set; } = string.Empty;
     public string? Location { get; set; }
+    public bool IncludeInResume { get; set; } = true;
+    public string AccomplishmentsJson { get; set; } = "[]";
     public string? StartDate { get; set; }
     public string? EndDate { get; set; }
     public bool IsCurrent { get; set; } = false;
