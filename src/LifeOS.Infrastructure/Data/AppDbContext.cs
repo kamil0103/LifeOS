@@ -7,6 +7,7 @@ public class AppDbContext : DbContext
 {
     public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
 
+    public DbSet<ResumeDraft> ResumeDrafts => Set<ResumeDraft>();
     public DbSet<User> Users => Set<User>();
     public DbSet<UserProfile> UserProfiles => Set<UserProfile>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
@@ -101,6 +102,7 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<WorkExperience>().Property(w => w.AccomplishmentsJson).HasDefaultValue("[]");
         modelBuilder.Entity<Project>().Property(p => p.IncludeInResume).HasDefaultValue(true);
         modelBuilder.Entity<Project>().Property(p => p.AccomplishmentsJson).HasDefaultValue("[]");
+        modelBuilder.Entity<ResumeDraft>(e => { e.HasKey(d => d.UserId); e.HasOne(d => d.User).WithMany().HasForeignKey(d => d.UserId).OnDelete(DeleteBehavior.Cascade); });
         modelBuilder.Entity<ReminderPreferences>().Property(p => p.CertificateExpiryEnabled).HasDefaultValue(true);
         modelBuilder.Entity<SkillEvidence>(e => { e.HasIndex(x => new { x.SkillId, x.SourceType, x.SourceId }).IsUnique(); e.HasOne(x => x.Skill).WithMany().HasForeignKey(x => x.SkillId).OnDelete(DeleteBehavior.Cascade); e.HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade); });
         modelBuilder.Entity<Habit>().Property(h => h.ScheduleDaysMask).HasDefaultValue(127);

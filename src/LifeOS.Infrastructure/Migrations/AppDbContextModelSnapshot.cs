@@ -1446,6 +1446,26 @@ namespace LifeOS.Infrastructure.Migrations
                     b.ToTable("ReminderPreferences");
                 });
 
+            modelBuilder.Entity("LifeOS.Domain.Entities.ResumeDraft", b =>
+                {
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ContentJson")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("Revision")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("UserId");
+
+                    b.ToTable("ResumeDrafts");
+                });
+
             modelBuilder.Entity("LifeOS.Domain.Entities.ResumeVersion", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2175,6 +2195,17 @@ namespace LifeOS.Infrastructure.Migrations
                 });
 
             modelBuilder.Entity("LifeOS.Domain.Entities.ReminderPreferences", b =>
+                {
+                    b.HasOne("LifeOS.Domain.Entities.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("LifeOS.Domain.Entities.ResumeDraft", b =>
                 {
                     b.HasOne("LifeOS.Domain.Entities.User", "User")
                         .WithMany()
