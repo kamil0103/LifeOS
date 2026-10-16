@@ -77,6 +77,7 @@ builder.Services.AddScoped<ITranscriptImportService, LifeOS.Infrastructure.Educa
 builder.Services.AddScoped<IEducationRecordService, LifeOS.Infrastructure.Education.EducationRecordService>();
 builder.Services.AddScoped<ICodingProgressService, LifeOS.Infrastructure.Coding.CodingProgressService>();
 builder.Services.AddScoped<IAiCoachService, LifeOS.Infrastructure.Coach.AiCoachService>();
+builder.Services.AddScoped<ICompanyResearchService, LifeOS.Infrastructure.Career.CompanyResearchService>();
 builder.Services.AddScoped<ICareerWorkflowService, LifeOS.Infrastructure.Career.CareerWorkflowService>();
 builder.Services.AddScoped<ICalendarService, CalendarService>();
 builder.Services.AddScoped<IPlanningService, PlanningService>();
