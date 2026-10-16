@@ -44,6 +44,7 @@ export default function CodingTrackerPage() {
   const [stats, setStats] = useState<Stats | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [filterDifficulty, setFilterDifficulty] = useState<string>('')
+  const [filterCategory, setFilterCategory] = useState('')
   const [filterSolved, setFilterSolved] = useState<string>('')
   const [showAddForm, setShowAddForm] = useState(false)
   const [error, setError] = useState('')
@@ -61,7 +62,7 @@ export default function CodingTrackerPage() {
 
   useEffect(() => {
     loadData()
-  }, [filterDifficulty, filterSolved])
+  }, [])
 
   useEffect(() => { const id = new URLSearchParams(window.location.search).get('problem'); if (id) document.getElementById('problem-' + id)?.scrollIntoView({ block: 'center' }) }, [problems])
 
@@ -69,12 +70,8 @@ export default function CodingTrackerPage() {
     setIsLoading(true)
     setError('')
     try {
-      const params = new URLSearchParams()
-      if (filterDifficulty) params.append('difficulty', filterDifficulty)
-      if (filterSolved) params.append('solved', filterSolved)
-
       const [{ data: probs }, { data: s }] = await Promise.all([
-        api.get(`/coding/problems?${params.toString()}`),
+        api.get('/coding/problems'),
         api.get('/coding/stats')
       ])
       setProblems(probs)
@@ -85,6 +82,10 @@ export default function CodingTrackerPage() {
       setIsLoading(false)
     }
   }
+
+  const categories = Array.from(new Map(problems.filter(p => p.category?.trim()).map(p => [p.category!.trim().toLowerCase(), p.category!.trim()])).values()).sort((a, b) => a.localeCompare(b))
+  const hasFilters = !!(filterDifficulty || filterSolved || filterCategory)
+  const visibleProblems = problems.filter(p => (!filterDifficulty || p.difficulty === filterDifficulty) && (!filterSolved || p.isSolved === (filterSolved === 'true')) && (!filterCategory || p.category?.trim().toLowerCase() === filterCategory.toLowerCase()))
 
   const createProblem = async () => {
     if (!formData.title.trim() || saving) return
@@ -230,31 +231,37 @@ export default function CodingTrackerPage() {
       )}
 
       {/* Filters */}
-      <div className="flex gap-3 mb-4 items-center">
+      <div className="flex flex-wrap gap-3 mb-4 items-center">
         <Filter className="h-4 w-4 text-muted-foreground" />
-        <select className="px-3 py-1 border rounded-md bg-background text-sm" value={filterDifficulty} onChange={e => setFilterDifficulty(e.target.value)}>
+        <select aria-label="Difficulty filter" className="px-3 py-1 border rounded-md bg-background text-sm" value={filterDifficulty} onChange={e => setFilterDifficulty(e.target.value)}>
           <option value="">All Difficulties</option>
           <option value="easy">Easy</option>
           <option value="medium">Medium</option>
           <option value="hard">Hard</option>
         </select>
-        <select className="px-3 py-1 border rounded-md bg-background text-sm" value={filterSolved} onChange={e => setFilterSolved(e.target.value)}>
+        <select aria-label="Status filter" className="px-3 py-1 border rounded-md bg-background text-sm" value={filterSolved} onChange={e => setFilterSolved(e.target.value)}>
           <option value="">All Status</option>
           <option value="true">Solved</option>
           <option value="false">Unsolved</option>
         </select>
+        <select aria-label="Topic filter" className="px-3 py-1 border rounded-md bg-background text-sm" value={filterCategory} onChange={e => setFilterCategory(e.target.value)}>
+          <option value="">All Topics</option>
+          {categories.map(category => <option key={category.toLowerCase()} value={category}>{category}</option>)}
+        </select>
+        {hasFilters && <Button variant="outline" size="sm" onClick={() => { setFilterDifficulty(''); setFilterSolved(''); setFilterCategory('') }}>Clear filters</Button>}
+        <span className="text-sm text-muted-foreground" role="status">{visibleProblems.length} of {problems.length} problems</span>
       </div>
 
       {/* Problem List */}
       <div className="space-y-3">
-        {problems.length === 0 ? (
+        {visibleProblems.length === 0 ? (
           <div className="bg-card border rounded-lg p-8 text-center">
             <Code2 className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-            <p className="text-muted-foreground">No problems tracked yet.</p>
-            <p className="text-sm text-muted-foreground mt-1">Add your first problem to start tracking.</p>
+            <p className="text-muted-foreground">{hasFilters ? 'No problems match these filters.' : 'No problems tracked yet.'}</p>
+            <p className="text-sm text-muted-foreground mt-1">{hasFilters ? 'Change or clear your filters to see more problems.' : 'Add your first problem to start tracking.'}</p>
           </div>
         ) : (
-          problems.map(problem => (
+          visibleProblems.map(problem => (
             <div id={'problem-' + problem.id} key={problem.id} className={`${new URLSearchParams(window.location.search).get('problem') === problem.id ? 'ring-2 ring-blue-500' : ''} bg-card border rounded-lg p-4 ${problem.isSolved ? 'opacity-80' : ''}`}>
               <div className="flex items-start justify-between">
                 <div className="flex-1">

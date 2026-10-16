@@ -2,10 +2,12 @@ import { useState, useEffect } from 'react'
 import api from '@/lib/api'
 import { useRecordActions } from '@/hooks/useRecordActions'
 import { useUnsavedChanges } from '@/hooks/useUnsavedChanges'
+import { Modal } from '@/components/ui/modal'
+import { PortfolioPreview, ProjectScreenshot, safeProjectUrl } from './PortfolioPreview'
 import { Button } from '@/components/ui/button'
 import { Loader2, ExternalLink, Github, Globe, Sparkles, Pencil } from 'lucide-react'
 
-interface PortfolioProject {
+export interface PortfolioProject {
   id: string
   name: string
   description?: string
@@ -16,6 +18,7 @@ interface PortfolioProject {
   isCurrent: boolean
   gitHubRepoUrl?: string
   deployedUrl?: string
+  readmePreview?: string
   screenshotUrl?: string
   isFeatured: boolean
   gitHubStars?: number
@@ -31,6 +34,7 @@ interface GitHubRepo {
 
 export default function PortfolioPage() {
   const { busy, error, setError, mutate } = useRecordActions()
+  const [preview, setPreview] = useState<PortfolioProject | null>(null)
   const [projects, setProjects] = useState<PortfolioProject[]>([])
   const [githubRepos, setGithubRepos] = useState<GitHubRepo[]>([])
   const [githubUsername, setGithubUsername] = useState('')
@@ -153,7 +157,9 @@ export default function PortfolioPage() {
         ) : (
           projects.map(project => (
             <div key={project.id} className={`bg-card border rounded-lg p-6 ${project.isFeatured ? 'border-primary/30' : ''}`}>
-              <div className="flex items-start justify-between mb-2">
+              <ProjectScreenshot key={project.screenshotUrl} project={project} />
+              <Button variant="outline" size="sm" onClick={() => setPreview(project)} aria-label={`Preview ${project.name}`}>Full preview</Button>
+              <div className="flex items-start justify-between mb-2 mt-3">
                 <h3 className="font-semibold">{project.name}</h3>
                 <div className="flex gap-1 items-center">
                   {project.isFeatured && <Sparkles className="h-4 w-4 text-primary" />}
@@ -175,20 +181,20 @@ export default function PortfolioPage() {
               )}
               {project.gitHubRepoUrl && <Button size="sm" variant="outline" disabled={busy} onClick={() => syncProject(project.id)}>Refresh GitHub stats</Button>}
               <div className="flex gap-2 mt-3">
-                {project.gitHubRepoUrl && (
-                  <a href={project.gitHubRepoUrl} target="_blank" rel="noopener noreferrer" className="text-xs flex items-center gap-1 text-muted-foreground hover:text-primary">
+                {safeProjectUrl(project.gitHubRepoUrl) && (
+                  <a href={safeProjectUrl(project.gitHubRepoUrl)} target="_blank" rel="noopener noreferrer" className="text-xs flex items-center gap-1 text-muted-foreground hover:text-primary">
                     <Github className="h-3 w-3" />
                     {project.gitHubStars !== null && project.gitHubStars !== undefined ? `${project.gitHubStars} stars` : 'GitHub'}
                   </a>
                 )}
-                {project.deployedUrl && (
-                  <a href={project.deployedUrl} target="_blank" rel="noopener noreferrer" className="text-xs flex items-center gap-1 text-muted-foreground hover:text-primary">
+                {safeProjectUrl(project.deployedUrl) && (
+                  <a href={safeProjectUrl(project.deployedUrl)} target="_blank" rel="noopener noreferrer" className="text-xs flex items-center gap-1 text-muted-foreground hover:text-primary">
                     <Globe className="h-3 w-3" />
                     Live
                   </a>
                 )}
-                {project.link && (
-                  <a href={project.link} target="_blank" rel="noopener noreferrer" className="text-xs flex items-center gap-1 text-muted-foreground hover:text-primary">
+                {safeProjectUrl(project.link) && (
+                  <a href={safeProjectUrl(project.link)} target="_blank" rel="noopener noreferrer" className="text-xs flex items-center gap-1 text-muted-foreground hover:text-primary">
                     <ExternalLink className="h-3 w-3" />
                     Link
                   </a>
@@ -198,6 +204,8 @@ export default function PortfolioPage() {
           ))
         )}
       </div>
+
+      <Modal open={!!preview} onClose={() => setPreview(null)} title={preview?.name || 'Project preview'}>{preview && <PortfolioPreview project={preview} />}</Modal>
 
       {/* Edit Project Modal */}
       {editProject && (

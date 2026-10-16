@@ -50,3 +50,16 @@ it('keeps the experience form and input when validation fails', async () => {
     await view.click('Save'); expect(view.container.textContent).toContain('End date is before start date'); expect(view.container.querySelector<HTMLInputElement>('input[placeholder="Company"]')!.value).toBe('My company')
   } finally { await view.close() }
 })
+
+it('opens a complete portfolio preview without writing project data', async () => {
+  vi.mocked(api.get).mockResolvedValue({ data: [{ id: 'p', name: 'Preview demo', isCurrent: true, isFeatured: false, description: 'Full description', technologies: 'React', readmePreview: 'Imported README' }] })
+  const view = await mount(<PortfolioPage />)
+  try {
+    await view.click('Full preview')
+    const dialog = document.querySelector('[role="dialog"]')!
+    expect(dialog.textContent).toContain('Full description'); expect(dialog.textContent).toContain('Imported README'); expect(dialog.textContent).toContain('Present')
+    expect(api.put).not.toHaveBeenCalled(); expect(api.post).not.toHaveBeenCalled()
+    await act(async () => dialog.querySelector<HTMLButtonElement>('[aria-label="Close dialog"]')!.click())
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+  } finally { await view.close() }
+})
