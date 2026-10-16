@@ -31,6 +31,7 @@ public class CalendarService(AppDbContext db) : ICalendarService
     {
         var e = await db.CalendarEvents.FirstOrDefaultAsync(e => e.Id == id && e.UserId == userId, ct);
         if (e == null) return null;
+        if (e.ActionKey?.StartsWith("interview:") == true) throw new InvalidOperationException("Edit or cancel this interview in Application Tracker to preserve its history.");
         Validate(request.Title, request.StartTime, request.EndTime);
         e.Title=request.Title.Trim(); e.Description=request.Description; e.StartTime=request.StartTime.ToUniversalTime(); e.EndTime=request.EndTime?.ToUniversalTime(); e.IsAllDay=request.IsAllDay; e.Location=request.Location; e.EventType=e.ApplicationId.HasValue?"followup":request.EventType; e.Color=request.Color; e.UpdatedAt=DateTimeOffset.UtcNow;
         if(e.ApplicationId.HasValue && e.EventType=="followup") {
@@ -43,6 +44,7 @@ public class CalendarService(AppDbContext db) : ICalendarService
     {
         var e=await db.CalendarEvents.FirstOrDefaultAsync(e=>e.Id==id && e.UserId==userId,ct);
         if(e==null)return false;
+        if (e.ActionKey?.StartsWith("interview:") == true) throw new InvalidOperationException("Cancel this interview in Application Tracker to preserve its history.");
         if(e.ApplicationId.HasValue && e.EventType=="followup") { var application=await db.JobApplications.FirstOrDefaultAsync(a=>a.Id==e.ApplicationId && a.UserId==userId,ct);if(application!=null)application.FollowUpDate=null; }
         db.CalendarEvents.Remove(e); await db.SaveChangesAsync(ct); return true;
     }

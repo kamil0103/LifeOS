@@ -16,10 +16,12 @@ public class ApplicationsController : ControllerBase
     private readonly AppDbContext _context;
     private readonly LifeOS.Application.Interfaces.ICareerWorkflowService _career;
 
-    public ApplicationsController(AppDbContext context, LifeOS.Application.Interfaces.ICareerWorkflowService career)
+    private readonly LifeOS.Application.Interfaces.IApplicationInterviewService _interviews;
+    public ApplicationsController(AppDbContext context, LifeOS.Application.Interfaces.ICareerWorkflowService career, LifeOS.Application.Interfaces.IApplicationInterviewService interviews)
     {
         _context = context;
         _career = career;
+        _interviews = interviews;
     }
 
     private Guid GetUserId()
@@ -121,17 +123,7 @@ public class ApplicationsController : ControllerBase
     [HttpDelete("{id:guid}")]
     public async Task<IActionResult> DeleteApplication(Guid id, CancellationToken ct)
     {
-        var userId = GetUserId();
-        var application = await _context.JobApplications
-            .FirstOrDefaultAsync(a => a.Id == id && a.UserId == userId, ct);
-
-        if (application == null) return NotFound();
-
-        var linked=await _context.CalendarEvents.Where(e=>e.ApplicationId==id && e.UserId==userId).ToListAsync(ct);
-        _context.CalendarEvents.RemoveRange(linked);
-        _context.JobApplications.Remove(application);
-        await _context.SaveChangesAsync(ct);
-        return NoContent();
+        return await _interviews.DeleteApplicationAsync(GetUserId(), id, ct) ? NoContent() : NotFound();
     }
 
     private static JobApplicationDto MapApplication(JobApplication a) => new()

@@ -37,6 +37,7 @@ public class AppDbContext : DbContext
     public DbSet<Bookmark> Bookmarks => Set<Bookmark>();
     public DbSet<ReadingPlan> ReadingPlans => Set<ReadingPlan>();
     public DbSet<ReadingPlanDay> ReadingPlanDays => Set<ReadingPlanDay>();
+    public DbSet<ApplicationInterview> ApplicationInterviews => Set<ApplicationInterview>();
     public DbSet<CalendarEvent> CalendarEvents => Set<CalendarEvent>();
     public DbSet<ReminderPreferences> ReminderPreferences => Set<ReminderPreferences>();
     public DbSet<Notification> Notifications => Set<Notification>();
@@ -112,6 +113,7 @@ public class AppDbContext : DbContext
 
         modelBuilder.Entity<ReminderPreferences>(e => { e.HasKey(p => p.UserId); e.HasOne(p => p.User).WithMany().HasForeignKey(p => p.UserId).OnDelete(DeleteBehavior.Cascade); });
         modelBuilder.Entity<Notification>(e => e.HasIndex(n => new { n.UserId, n.SourceKey }).IsUnique());
+        modelBuilder.Entity<ApplicationInterview>(e => { e.HasIndex(i => new { i.UserId, i.RequestId }).IsUnique(); e.HasOne(i => i.Application).WithMany().HasForeignKey(i => i.ApplicationId).OnDelete(DeleteBehavior.Cascade); e.HasOne(i => i.User).WithMany().HasForeignKey(i => i.UserId).OnDelete(DeleteBehavior.Cascade); });
         modelBuilder.Entity<CalendarEvent>(e => e.HasIndex(c => new { c.UserId, c.ActionKey }).IsUnique());
         modelBuilder.Entity<CalendarEvent>(e => e.HasOne(c => c.Application).WithMany().HasForeignKey(c => c.ApplicationId).OnDelete(DeleteBehavior.SetNull));
 
