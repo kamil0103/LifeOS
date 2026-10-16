@@ -102,6 +102,7 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<WorkExperience>().Property(w => w.AccomplishmentsJson).HasDefaultValue("[]");
         modelBuilder.Entity<Project>().Property(p => p.IncludeInResume).HasDefaultValue(true);
         modelBuilder.Entity<Project>().Property(p => p.AccomplishmentsJson).HasDefaultValue("[]");
+        modelBuilder.Entity<Document>(e => { e.HasOne(d => d.Application).WithMany().HasForeignKey(d => d.ApplicationId).OnDelete(DeleteBehavior.SetNull); e.HasOne(d => d.SourceResumeVersion).WithMany().HasForeignKey(d => d.SourceResumeVersionId).OnDelete(DeleteBehavior.SetNull); });
         modelBuilder.Entity<ResumeDraft>(e => { e.HasKey(d => d.UserId); e.HasOne(d => d.User).WithMany().HasForeignKey(d => d.UserId).OnDelete(DeleteBehavior.Cascade); });
         modelBuilder.Entity<ReminderPreferences>().Property(p => p.CertificateExpiryEnabled).HasDefaultValue(true);
         modelBuilder.Entity<SkillEvidence>(e => { e.HasIndex(x => new { x.SkillId, x.SourceType, x.SourceId }).IsUnique(); e.HasOne(x => x.Skill).WithMany().HasForeignKey(x => x.SkillId).OnDelete(DeleteBehavior.Cascade); e.HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.Cascade); });

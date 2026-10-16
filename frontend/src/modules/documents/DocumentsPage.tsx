@@ -1,3 +1,5 @@
+import DocumentPreview from './DocumentPreview'
+import DocumentLinksEditor from './DocumentLinksEditor'
 import { Link, useSearchParams } from 'react-router-dom'
 import { notify } from '@/lib/notify'
 import { useState, useEffect } from 'react'
@@ -12,11 +14,19 @@ interface DocumentItem {
   generatedAt: string
   jobId?: string
   jobTitle?: string
+  updatedAt: string
+  applicationId?: string
+  applicationCompany?: string
+  applicationStatus?: string
+  sourceResumeVersionId?: string
+  sourceResumeVersionTitle?: string
 }
 
 export default function DocumentsPage() {
   const [params] = useSearchParams()
   const [search, setSearch] = useState(''), [type, setType] = useState(''), [jobFilter, setJobFilter] = useState(params.get('job') || ''), [error, setError] = useState('')
+  const [applicationFilter, setApplicationFilter] = useState(params.get('application') || '')
+  const [editing, setEditing] = useState<DocumentItem | null>(null)
   const [documents, setDocuments] = useState<DocumentItem[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [deletingId, setDeletingId] = useState<string | null>(null)
@@ -66,8 +76,9 @@ export default function DocumentsPage() {
     }
   }
 
-  const visible = documents.filter(d => (!type || d.type === type) && (!jobFilter || d.jobId === jobFilter) && (d.filename + ' ' + (d.jobTitle || '')).toLowerCase().includes(search.trim().toLowerCase()))
+  const visible = documents.filter(d => (!type || d.type === type) && (!jobFilter || d.jobId === jobFilter) && (!applicationFilter || d.applicationId === applicationFilter) && [d.filename, d.jobTitle, d.applicationCompany, d.sourceResumeVersionTitle].filter(Boolean).join(' ').toLowerCase().includes(search.trim().toLowerCase()))
   const jobs = Array.from(new Map(documents.filter(d => d.jobId).map(d => [d.jobId!, d.jobTitle || 'Linked job'])).entries())
+  const applications = Array.from(new Map(documents.filter(d => d.applicationId).map(d => [d.applicationId!, [d.jobTitle, d.applicationCompany].filter(Boolean).join(' · ') || 'Linked application'])).entries())
   const getTypeLabel = (type: string) => {
     switch (type) {
       case 'resume': return 'Resume'
@@ -88,8 +99,10 @@ export default function DocumentsPage() {
     <div className="p-8 max-w-4xl mx-auto">
       <h1 className="text-2xl font-bold mb-3">Documents</h1>
       <p className="text-sm text-muted-foreground mb-4">Find generated resumes, cover letters and job preparation files.</p>
-      <div className="grid sm:grid-cols-3 gap-3 mb-5"><input className="border rounded-md p-2 bg-background" aria-label="Search documents" placeholder="Filename or role" value={search} onChange={e => setSearch(e.target.value)} /><select className="border rounded-md p-2 bg-background" aria-label="Filter document type" value={type} onChange={e => setType(e.target.value)}><option value="">All document types</option><option value="resume">Resumes</option><option value="cover_letter">Cover letters</option><option value="qa_sheet">Interview preparation</option></select><select className="border rounded-md p-2 bg-background" aria-label="Filter documents by job" value={jobFilter} onChange={e => setJobFilter(e.target.value)}><option value="">All jobs</option>{jobFilter && !jobs.some(([id]) => id === jobFilter) && <option value={jobFilter}>Selected job</option>}{jobs.map(([id, title]) => <option key={id} value={id}>{title}</option>)}</select></div>
+      <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-5"><input className="border rounded-md p-2 bg-background" aria-label="Search documents" placeholder="Filename, role or source version" value={search} onChange={e => setSearch(e.target.value)} /><select className="border rounded-md p-2 bg-background" aria-label="Filter document type" value={type} onChange={e => setType(e.target.value)}><option value="">All document types</option><option value="resume">Resumes</option><option value="cover_letter">Cover letters</option><option value="qa_sheet">Interview preparation</option></select><select className="border rounded-md p-2 bg-background" aria-label="Filter documents by job" value={jobFilter} onChange={e => setJobFilter(e.target.value)}><option value="">All jobs</option>{jobFilter && !jobs.some(([id]) => id === jobFilter) && <option value={jobFilter}>Selected job</option>}{jobs.map(([id, title]) => <option key={id} value={id}>{title}</option>)}</select><select className="border rounded-md p-2 bg-background" aria-label="Filter documents by application" value={applicationFilter} onChange={e => setApplicationFilter(e.target.value)}><option value="">All applications</option>{applicationFilter && !applications.some(([id]) => id === applicationFilter) && <option value={applicationFilter}>Selected application</option>}{applications.map(([id, title]) => <option key={id} value={id}>{title}</option>)}</select></div>
+      {applicationFilter && <Link className="text-sm underline block mb-4" to={'/jobs/applications?application=' + applicationFilter}>Open application</Link>}
       {error && <p role="alert">{error} <Button onClick={loadDocuments}>Try again</Button></p>}
+      {editing && <DocumentLinksEditor key={editing.id} document={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); loadDocuments() }} />}
       {jobFilter && <Link className="text-sm underline block mb-4" to={'/jobs?job=' + jobFilter}>Open job details</Link>}
       {!error && documents.length > 0 && visible.length === 0 && <p className="text-muted-foreground py-6">No documents match these filters.</p>}
 
@@ -115,12 +128,16 @@ export default function DocumentsPage() {
                   {doc.jobTitle && (
                     <p className="text-xs text-muted-foreground">For: <Link className="underline" to={'/jobs?job=' + doc.jobId}>{doc.jobTitle}</Link></p>
                   )}
+                  {doc.applicationId && <p className="text-xs mt-1">Application: <Link className="underline" to={'/jobs/applications?application=' + doc.applicationId}>{doc.applicationCompany || 'Open application'}{doc.applicationStatus ? ' · ' + doc.applicationStatus.replace(/_/g, ' ') : ''}</Link></p>}
+                  {doc.sourceResumeVersionId && <p className="text-xs mt-1">Source version: <Link className="underline" to={'/resume?version=' + doc.sourceResumeVersionId}>{doc.sourceResumeVersionTitle || 'View version'}</Link></p>}
                   <p className="text-xs text-muted-foreground">
                     {new Date(doc.generatedAt).toLocaleString()}
                   </p>
                 </div>
               </div>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
+                <DocumentPreview id={doc.id} filename={doc.filename} />
+                <Button size="sm" variant="outline" onClick={() => setEditing(doc)}>Edit links</Button>
                 <Button
                   size="sm"
                   variant="outline"

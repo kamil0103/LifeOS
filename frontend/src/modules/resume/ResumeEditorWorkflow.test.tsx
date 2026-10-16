@@ -20,3 +20,7 @@ it('reviews AI changes before applying and never automatically saves a version',
  await act(async()=>Array.from(dialog.querySelectorAll('button')).find(b=>b.textContent==='Apply to draft')!.click());expect(document.querySelector('[role="dialog"]')).toBeNull();expect(api.post).toHaveBeenCalledTimes(1)
  }finally{await v.close()}
 })
+it('opens a source-version link as a comparison without replacing the server draft',async()=>{
+ window.history.replaceState(null,'','/resume?version=source')
+ const v=await mount();try{await act(async()=>{await Promise.resolve()});expect(api.get).toHaveBeenCalledWith('/resume-versions/source');expect(document.querySelector('[role="dialog"]')?.textContent).toContain('Older saved title');expect(v.el.querySelector<HTMLInputElement>('input')?.value).toBe('Original');expect(api.put).not.toHaveBeenCalled()}finally{await v.close();window.history.replaceState(null,'','/')}
+})

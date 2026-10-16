@@ -22,6 +22,7 @@ public class DocumentsController : ControllerBase
     private readonly IDocumentStorage _documentStorage;
     private readonly Func<IAiProvider> _aiProvider;
     private readonly ICareerWorkflowService _career;
+    private readonly IDocumentLibraryService _library;
 
     public DocumentsController(
         AppDbContext context,
@@ -29,7 +30,7 @@ public class DocumentsController : ControllerBase
         IResumeGenerator resumeGenerator,
         IResumeDataBuilder resumeDataBuilder,
         IDocumentStorage documentStorage,
-        Func<IAiProvider> aiProvider, ICareerWorkflowService career)
+        Func<IAiProvider> aiProvider, ICareerWorkflowService career, IDocumentLibraryService library)
     {
         _context = context;
         _currentUser = currentUser;
@@ -38,6 +39,7 @@ public class DocumentsController : ControllerBase
         _documentStorage = documentStorage;
         _aiProvider = aiProvider;
         _career = career;
+        _library = library;
     }
 
     private Guid GetUserId()
@@ -49,6 +51,7 @@ public class DocumentsController : ControllerBase
     public async Task<IActionResult> GenerateResume([FromBody] GenerateResumeRequest request, CancellationToken ct)
     {
         var userId = GetUserId();
+        var links = await _library.ResolveLinksAsync(userId, request.Links ?? new(), ct);
 
         // Use the editor's current data when provided; otherwise build fresh from DB
         ResumeDataDto data = request.Data ?? await _resumeDataBuilder.BuildAsync(userId, ct);
@@ -78,6 +81,7 @@ public class DocumentsController : ControllerBase
         var doc = new Document
         {
             UserId = userId,
+            JobId = links.JobId, ApplicationId = links.ApplicationId, SourceResumeVersionId = links.SourceResumeVersionId,
             Type = "resume",
             Filename = filename,
             StoragePath = storagePath,
@@ -213,26 +217,12 @@ Return ONLY valid JSON:
     }
 
     [HttpGet]
-    public async Task<ActionResult<List<GeneratedDocumentDto>>> GetDocuments(CancellationToken ct)
-    {
-        var userId = GetUserId();
-        var docs = await _context.Documents
-            .AsNoTracking()
-            .Where(d => d.UserId == userId)
-            .OrderByDescending(d => d.GeneratedAt)
-            .Select(d => new GeneratedDocumentDto
-            {
-                Id = d.Id,
-                Type = d.Type,
-                Filename = d.Filename,
-                GeneratedAt = d.GeneratedAt,
-                JobId = d.JobId,
-                JobTitle = d.Job != null ? d.Job.Title : null
-            })
-            .ToListAsync(ct);
+    public Task<List<GeneratedDocumentDto>> GetDocuments(CancellationToken ct) => _library.ListAsync(GetUserId(), ct);
 
-        return docs;
-    }
+    [HttpGet("{id:guid}/preview")]
+    public async Task<IActionResult> Preview(Guid id,CancellationToken ct) { var bytes=await _library.PreviewAsync(GetUserId(),id,ct);if(bytes==null)return NotFound();Response.Headers.CacheControl="no-store";Response.Headers["X-Content-Type-Options"]="nosniff";return File(bytes,MediaTypeNames.Application.Pdf); }
+    [HttpPut("{id:guid}/links")]
+    public async Task<ActionResult<GeneratedDocumentDto>> UpdateLinks(Guid id,DocumentLinksRequest request,CancellationToken ct) => await _library.UpdateLinksAsync(GetUserId(),id,request,ct) is {} result?Ok(result):NotFound();
 
     [HttpGet("{id}/download")]
     public async Task<IActionResult> DownloadDocument(Guid id, CancellationToken ct)
@@ -278,6 +268,7 @@ Return ONLY valid JSON:
 
 public class GenerateResumeRequest
 {
+    public DocumentLinksRequest? Links { get; set; }
     public string? Title { get; set; }
     public string? Template { get; set; }
     public List<string>? SectionOrder { get; set; }

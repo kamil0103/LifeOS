@@ -35,8 +35,8 @@ public class CareerWorkflowService(AppDbContext db) : ICareerWorkflowService
     }
     public async Task EnsureAssetUnusedAsync(Guid assetId,bool isResume,CancellationToken ct)
     {
-        var used=isResume?await db.JobApplications.AnyAsync(a=>a.ResumeVersionId==assetId,ct):await db.JobApplications.AnyAsync(a=>a.CoverLetterDocumentId==assetId,ct);
-        if(used)throw new InvalidOperationException("This " +(isResume?"resume version":"document")+" is linked to an application. Remove the link in the application before deleting it.");
+        var used=isResume?(await db.JobApplications.AnyAsync(a=>a.ResumeVersionId==assetId,ct)||await db.Documents.AnyAsync(d=>d.SourceResumeVersionId==assetId,ct)):await db.JobApplications.AnyAsync(a=>a.CoverLetterDocumentId==assetId,ct);
+        if(used)throw new InvalidOperationException("This " +(isResume?"resume version":"document")+" is linked to an application or source document. Remove its links before deleting it.");
     }
     private static readonly ConcurrentDictionary<Guid,SemaphoreSlim> Gates=new();
     private async Task<IDbContextTransaction?> LockAsync(Guid userId,CancellationToken ct)

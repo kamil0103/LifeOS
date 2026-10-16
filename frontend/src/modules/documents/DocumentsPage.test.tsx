@@ -5,12 +5,22 @@ import { MemoryRouter } from 'react-router-dom'
 import { expect, it, vi } from 'vitest'
 import DocumentsPage from './DocumentsPage'
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
-vi.mock('@/lib/api', () => ({ default: { get: vi.fn(async () => ({ data: [{ id: 'letter', type: 'cover_letter', filename: 'owned_letter.pdf', jobId: 'owned', jobTitle: 'Engineer', generatedAt: '2026-10-14T12:00:00Z' }, { id: 'resume', type: 'resume', filename: 'other_resume.pdf', generatedAt: '2026-10-14T12:00:00Z' }] })) } }))
+vi.mock('@/lib/api', () => ({ default: { get: vi.fn(async () => ({ data: [{ id: 'letter', type: 'cover_letter', filename: 'owned_letter.pdf', jobId: 'owned', jobTitle: 'Engineer', applicationId: 'application', applicationCompany: 'Devices', sourceResumeVersionId: 'source', sourceResumeVersionTitle: 'Original resume', generatedAt: '2026-10-14T12:00:00Z' }, { id: 'resume', type: 'resume', filename: 'other_resume.pdf', generatedAt: '2026-10-14T12:00:00Z' }] })) } }))
 it('opens the documents for the linked job without mixing unrelated files', async () => {
   const container = document.createElement('div'); document.body.appendChild(container); const root = createRoot(container)
   try {
     await act(async () => { root.render(<MemoryRouter initialEntries={['/documents?job=owned']}><DocumentsPage /></MemoryRouter>); await new Promise(resolve => setTimeout(resolve, 25)) })
     expect(container.textContent).toContain('owned_letter.pdf'); expect(container.textContent).not.toContain('other_resume.pdf')
     expect(container.querySelector('a[href="/jobs?job=owned"]')).not.toBeNull()
+  } finally { await act(async () => root.unmount()); container.remove() }
+})
+
+it('filters by application and opens the source version without replacing the resume draft', async () => {
+  const container = document.createElement('div'); document.body.appendChild(container); const root = createRoot(container)
+  try {
+    await act(async () => root.render(<MemoryRouter initialEntries={['/documents?application=application']}><DocumentsPage /></MemoryRouter>))
+    expect(container.textContent).toContain('owned_letter.pdf'); expect(container.textContent).not.toContain('other_resume.pdf')
+    expect(container.querySelector('a[href="/jobs/applications?application=application"]')).not.toBeNull()
+    expect(container.querySelector('a[href="/resume?version=source"]')?.textContent).toBe('Original resume')
   } finally { await act(async () => root.unmount()); container.remove() }
 })

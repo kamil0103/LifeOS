@@ -6,6 +6,12 @@ public class GeneratedDocumentDto
     public string Type { get; set; } = string.Empty; // resume, cover_letter, qa_sheet
     public string Filename { get; set; } = string.Empty;
     public DateTimeOffset GeneratedAt { get; set; }
+    public DateTimeOffset UpdatedAt { get; set; }
+    public Guid? ApplicationId { get; set; }
+    public string? ApplicationCompany { get; set; }
+    public string? ApplicationStatus { get; set; }
+    public Guid? SourceResumeVersionId { get; set; }
+    public string? SourceResumeVersionTitle { get; set; }
     public Guid? JobId { get; set; }
     public string? JobTitle { get; set; }
 }
@@ -25,3 +31,12 @@ public class SaveResumeVersionRequest
     public string Template { get; set; } = "modern";
     public ResumeDataDto Data { get; set; } = new();
 }
+
+public class DocumentLinksRequest
+{
+    public Guid? JobId { get; set; }
+    public Guid? ApplicationId { get; set; }
+    public Guid? SourceResumeVersionId { get; set; }
+    public DateTimeOffset? ExpectedUpdatedAt { get; set; }
+}
+public record DocumentLinkTargets(Guid? JobId, Guid? ApplicationId, Guid? SourceResumeVersionId);

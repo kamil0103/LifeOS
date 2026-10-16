@@ -5,7 +5,7 @@ import { Modal } from '@/components/ui/modal'
 import { notify } from '@/lib/notify'
 import { useAuthStore } from '@/hooks/useAuthStore'
 import { useUnsavedChanges } from '@/hooks/useUnsavedChanges'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import api from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Loader2, FileText, Save, Download, Shield, Sparkles, X } from 'lucide-react'
@@ -96,6 +96,8 @@ export default function ResumeEditorPage() {
   const [resumeData, setResumeData] = useState<ResumeData | null>(null)
   const autosave = useResumeAutosave(resumeData)
   const [loadError, setLoadError] = useState('')
+  const [sourceVersionId, setSourceVersionId] = useState('')
+  const sourceOpened = useRef(false)
   const [compareBaseId, setCompareBaseId] = useState('')
   const [comparison, setComparison] = useState<{ title: string; data: ResumeData; before: ResumeData; beforeLabel: string } | null>(null)
   const [aiReview, setAiReview] = useState<{ before: ResumeData; after: ResumeData; changes: string[]; recommendations: ResumeRecommendation[] } | null>(null)
@@ -127,6 +129,13 @@ export default function ResumeEditorPage() {
     loadData()
     loadSavedJobs()
   }, [])
+
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get('version')
+    if (!id || !resumeData || sourceOpened.current) return
+    sourceOpened.current = true
+    api.get(`/resume-versions/${encodeURIComponent(id)}`).then(({ data }) => { if (!data.data) throw new Error(); setComparison({ title: data.title, data: data.data, before: resumeData, beforeLabel: 'Current draft' }) }).catch(() => notify('The source resume version could not be loaded.', 'error'))
+  }, [resumeData])
 
   const loadSavedJobs = async () => {
     try {
@@ -227,6 +236,7 @@ export default function ResumeEditorPage() {
     setIsLoading(true)
     try {
       const fresh = await api.get('/documents/resume-data')
+      setSourceVersionId('')
       setResumeData(fresh.data)
       setRecommendations(fresh.data.pendingRecommendations || [])
       setSavedSnapshot(JSON.stringify(fresh.data))
@@ -247,6 +257,7 @@ export default function ResumeEditorPage() {
         title: resumeData.title,
         template: resumeData.template,
         sectionOrder: resumeData.sectionOrder,
+        links: { sourceResumeVersionId: sourceVersionId || null },
         data: resumeData,
       }, { responseType: 'blob' })
       const blob = new Blob([response.data], { type: 'application/pdf' })
@@ -291,6 +302,7 @@ export default function ResumeEditorPage() {
     try {
       const { data } = await api.get(`/resume-versions/${id}`)
       if (data.data) {
+        setSourceVersionId(id)
         setResumeData(data.data)
         setRecommendations(data.data.pendingRecommendations || [])
         setSavedSnapshot(JSON.stringify(data.data))
